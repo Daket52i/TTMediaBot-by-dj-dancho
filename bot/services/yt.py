@@ -282,7 +282,13 @@ class YtService(_Service):
                     logging.info(f"YT Get (Playlist) finished in {duration:.2f}ms for {url}")
                     return tracks
                 if not process:
-                    # Fetch related videos for queueing if it's a single video!
+                    # If extra_info was provided (e.g. from an entry inside a playlist loop), return the single Track directly
+                    if extra_info:
+                        return [
+                            Track(service=self.name, extra_info=info, type=TrackType.Dynamic)
+                        ]
+
+                    # Fetch related videos for queueing if it's a single standalone video request!
                     video_id = info.get("id") or info.get("videoId")
                     if not video_id and url:
                          if "v=" in url:

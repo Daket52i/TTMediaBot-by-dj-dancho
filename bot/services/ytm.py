@@ -416,6 +416,12 @@ class YtmService(_Service):
                   ]
 
         # If process=False, we are adding to queue (The "Radio" logic)
+        if extra_info and not url:
+             t_title = extra_info.get("title", "")
+             t_vid = extra_info.get("videoId") or extra_info.get("id")
+             t_url = f"https://www.youtube.com/watch?v={t_vid}" if t_vid else ""
+             return [Track(service=self.name, url=t_url, name=t_title, type=TrackType.Dynamic, extra_info=extra_info)]
+
         video_id = None
         if extra_info and "videoId" in extra_info:
              video_id = extra_info["videoId"]
