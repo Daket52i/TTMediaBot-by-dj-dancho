@@ -44,14 +44,8 @@ class PlaylistUploader:
         logging.info(f"PlaylistUploader started for {len(tracks)} tracks requested by {user.username}")
         user_id = user.id
         
-        # Limit tracks to prevent resource exhaustion
-        max_tracks = 100 # Default limit
-        if len(tracks) > max_tracks:
-            self.ttclient.send_message(
-                self.translator.translate("Error: This playlist is too large (max {} tracks).").format(max_tracks),
-                user
-            )
-            return
+        # Unlimited playlist tracks allowed
+        pass
 
         error_exit = False
         temp_dir = tempfile.TemporaryDirectory()
