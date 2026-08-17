@@ -4,6 +4,30 @@ All notable updates to this fork are documented here, in reverse chronological o
 
 ---
 
+## 🆕 v2.5.2 — "Dedicated Uninstaller & Legal Protection" *(08/17/2026)*
+
+### 🛡️ Dedicated Uninstaller Submenu (`uninstall.sh`)
+- **📜 Standalone Uninstaller:**
+  Extracted and refactored the uninstallation logic from `ttbotdocker.sh` into a standalone, fully English-localized script [`uninstall.sh`](file:///root/joao/TTMediaBot/uninstall.sh).
+- **🟢 Option 1 — Standard Uninstall (Safe & Recommended):**
+  Removes **ONLY** TTMediaBot containers (labeled `role=ttmediabot`), the `ttmediabot` Docker image, bot data folders (`bots/`), the auto-updater systemd service, and temporary lock files. Preserves Docker Engine, system packages (`git`, `curl`, `jq`), and any other Docker projects on the server.
+- **🔴 Option 2 — Complete System Purge (DESTRUCTIVE):**
+  Purges TTMediaBot along with Docker Engine, Docker volumes, networks, system firewall (`iptables`) rules, system packages (`git`, `curl`, `jq`, `gnupg`), and Docker system directories (`/var/lib/docker`).
+
+### ⚖️ Legal Disclaimers & Explicit Confirmation
+- **⚠️ Liability Disclaimer:**
+  Added prominent legal disclaimers to Option 2 in `uninstall.sh` and `README.md`, stating that the developer/author assumes no responsibility or liability for data loss, server downtime, or system instability caused by executing full purges (especially on production or shared servers).
+- **🔒 Explicit Confirmations:**
+  Requires explicit confirmation prompts (`y/N` for Option 1, and typing `yes` to accept the disclaimer for Option 2). Option `0` cleanly exits the uninstaller without forcing a return loop to `ttbotdocker.sh`.
+
+### 🎨 Clean Output & Documentation
+- **🧹 UI Clean-up:**
+  Cleaned up repetitive ASCII border lines (`====`) across `uninstall.sh`, `ttbotdocker.sh`, and `install_git_clone.sh` for a cleaner terminal output.
+- **📖 README & Terms of Use:**
+  Updated `README.md` with the new uninstaller options, explicit production warnings, and a dedicated **Legal Disclaimer & Terms of Use** section.
+
+---
+
 ## 🆕 v2.5.1 — "Proof of Origin & Playback Rate Limit Bypass" *(07/11/2026)*
 
 ### 🔒 Automated PO Token Integration (Anti-Bot Bypass)
