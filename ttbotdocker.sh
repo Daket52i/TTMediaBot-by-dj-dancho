@@ -24,9 +24,7 @@ NC='\033[0m' # No Color
 # Function: Display Header
 header() {
     clear
-    echo -e "${GREEN}=========================================${NC}"
     echo -e "${GREEN}      TTMediaBot Docker Manager          ${NC}"
-    echo -e "${GREEN}=========================================${NC}"
     echo ""
 }
 
@@ -1414,147 +1412,14 @@ restart_with_timer() {
     read -p "Enter to return..."
 }
 
-# Function: Full Uninstall
+# Function: Delegate Uninstall to uninstall.sh
 uninstall_all() {
-    clear
-    echo -e "${RED}=========================================${NC}"
-    echo -e "${RED}      COMPLETE UNINSTALLATION            ${NC}"
-    echo -e "${RED}=========================================${NC}"
-    echo ""
-    echo -e "${RED}WARNING: THIS ACTION IS DESTRUCTIVE!${NC}"
-    echo "It will remove EVERYTHING except the project folder '${SCRIPT_DIR}'."
-    echo ""
-
-    read -p "Type 'yes' to confirm total destruction: " confirm
-    if [ "$confirm" != "yes" ]; then
-        echo "Cancelled."
-        read -p "Enter to return..."
-        return
-    fi
-
-    echo ""
-    echo -e "${YELLOW}1. Stopping and removing containers...${NC}"
-    docker stop -t 1 $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
-    docker rm $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
-
-    echo -e "${YELLOW}2. Nuking all Docker resources (images, networks, volumes)...${NC}"
-    docker system prune -a -f --volumes 2>/dev/null
-
-    echo -e "${YELLOW}3. Stopping Docker service...${NC}"
-    if command -v systemctl &> /dev/null; then
-        systemctl stop docker 2>/dev/null
-        systemctl stop docker.socket 2>/dev/null
-        systemctl disable docker 2>/dev/null
-        systemctl disable docker.socket 2>/dev/null
-    fi
-
-    echo -e "${YELLOW}4. Removing bot files (configs/cookies)...${NC}"
-    if [ -d "$BOTS_ROOT" ]; then
-        rm -rf "$BOTS_ROOT"
-    fi
-
-    echo -e "${YELLOW}5. Disabling and removing auto-updater service...${NC}"
-    if command -v systemctl &> /dev/null; then
-        systemctl stop ttmediabot-updater.service 2>/dev/null
-        systemctl disable ttmediabot-updater.service 2>/dev/null
-        rm -f /etc/systemd/system/ttmediabot-updater.service
-        systemctl daemon-reload 2>/dev/null
+    if [ -f "${SCRIPT_DIR}/uninstall.sh" ]; then
+        exec bash "${SCRIPT_DIR}/uninstall.sh"
     else
-        rm -f /etc/systemd/system/ttmediabot-updater.service
+        echo -e "${RED}Error: uninstall.sh not found.${NC}"
+        read -p "Press Enter to continue..."
     fi
-
-    echo -e "${YELLOW}6. Cleaning temp and lock files...${NC}"
-    rm -f /tmp/ttmediabot_update.lock
-    rm -f /tmp/ttmediabot_last_running.txt
-    rm -f /tmp/cookies_pasted.txt
-    rm -f /tmp/ttbot_destroy_*.sh
-
-    echo ""
-    echo -e "${YELLOW}7. Uninstalling Docker Engine and all packages...${NC}"
-    if command -v apt-get &> /dev/null; then
-        apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose 2>/dev/null
-        echo -e "${YELLOW}   Removing extra packages installed by this script...${NC}"
-        apt-get purge -y jq curl gnupg lsb-release git 2>/dev/null
-    elif command -v dnf &> /dev/null; then
-        dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose jq curl gnupg2 git 2>/dev/null
-    elif command -v yum &> /dev/null; then
-        yum remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose jq curl gnupg2 git 2>/dev/null
-    elif command -v pacman &> /dev/null; then
-        pacman -Rns --noconfirm docker docker-compose jq curl gnupg git 2>/dev/null
-    elif command -v zypper &> /dev/null; then
-        zypper remove -y docker docker-compose jq curl gpg2 git 2>/dev/null
-    elif command -v apk &> /dev/null; then
-        apk del docker docker-compose jq curl gnupg git 2>/dev/null
-    fi
-
-    echo "   Removing residual Docker files..."
-    rm -rf /var/lib/docker
-    rm -rf /var/lib/containerd
-    rm -rf /etc/docker
-    rm -rf /etc/apparmor.d/docker
-    rm -rf /var/run/docker.sock
-    rm -rf /var/run/docker
-    rm -rf /run/docker
-    rm -rf /root/.docker
-    rm -rf /home/*/.docker
-    rm -rf /var/log/docker
-    rm -rf /var/log/containerd
-    rm -f  /usr/local/bin/docker-compose
-
-    echo -e "${YELLOW}8. Removing Docker APT repository and GPG key...${NC}"
-    if command -v apt-get &> /dev/null; then
-        rm -f /etc/apt/sources.list.d/docker.list
-        rm -f /etc/apt/keyrings/docker.gpg
-        apt-get update -q 2>/dev/null
-    fi
-
-    echo -e "${YELLOW}9. Removing docker group...${NC}"
-    groupdel docker 2>/dev/null || true
-
-    echo -e "${YELLOW}10. Flushing Docker iptables rules...${NC}"
-    iptables -t filter -F DOCKER 2>/dev/null || true
-    iptables -t filter -F DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-    iptables -t filter -F DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
-    iptables -t filter -F DOCKER-USER 2>/dev/null || true
-    iptables -t nat -F DOCKER 2>/dev/null || true
-    iptables -t nat -F POSTROUTING 2>/dev/null || true
-    iptables -t filter -X DOCKER 2>/dev/null || true
-    iptables -t filter -X DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-    iptables -t filter -X DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
-    iptables -t filter -X DOCKER-USER 2>/dev/null || true
-    iptables -t nat -X DOCKER 2>/dev/null || true
-
-    echo -e "${YELLOW}11. Removing docker0 network interface...${NC}"
-    ip link set docker0 down 2>/dev/null || true
-    ip link delete docker0 2>/dev/null || true
-
-    echo ""
-    echo -e "${YELLOW}12. Cleaning unused packages and cache...${NC}"
-    if command -v apt-get &> /dev/null; then
-        apt-get autoremove -y >/dev/null
-        apt-get autoclean -y >/dev/null
-    elif command -v dnf &> /dev/null; then
-        dnf clean all >/dev/null
-    elif command -v yum &> /dev/null; then
-        yum clean all >/dev/null
-    elif command -v pacman &> /dev/null; then
-        pacman -Scc --noconfirm >/dev/null
-    elif command -v zypper &> /dev/null; then
-        zypper clean -a >/dev/null
-    elif command -v apk &> /dev/null; then
-        apk cache clean >/dev/null
-    fi
-
-    echo ""
-    echo -e "${GREEN}=========================================${NC}"
-    echo -e "${GREEN}      CLEANUP COMPLETED.                 ${NC}"
-    echo -e "${GREEN}=========================================${NC}"
-    echo ""
-    echo "Everything has been removed from the system."
-    echo -e "${GREEN}Project folder '${SCRIPT_DIR}' was KEPT.${NC}"
-    echo ""
-    echo -e "${YELLOW}Note: A reboot is recommended to fully clear any remaining kernel state.${NC}"
-    exit 0
 }
 
 

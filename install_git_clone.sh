@@ -90,9 +90,9 @@ chmod +x *.sh
 
 echo "Ownership and permissions set for user: $REAL_USER"
 
-echo "========================================="
 echo "--- Checking TeamTalk_DLL ---"
-echo "========================================="
+
+# ... (down near line 148 and 154) ...
 
 DLL_URL="https://github.com/JoaoDEVWHADS/TTMediaBot/releases/download/downloadttdll/TeamTalk_DLL.zip"
 ARCH=$(uname -m)
@@ -145,15 +145,11 @@ echo "✅ TeamTalk_DLL folder is ready!"
     chmod -R 777 TeamTalk_DLL
     echo "Permissions set for TeamTalk_DLL folder."
     
-    echo "========================================="
     echo "--- Final Verification ---"
-    echo "========================================="
     
     ls -la | grep TeamTalk_DLL
     
-        echo "========================================="
-        echo "Setup Complete! Starting Docker Manager..."
-        echo "========================================="
+    echo "Setup Complete! Starting Docker Manager..."
         sleep 2
 
         if [ -f "./ttbotdocker.sh" ]; then

@@ -280,13 +280,19 @@ Updates the bot code and rebuilds the Docker image:
 - Recreates containers with new image
 - Restarts only previously running bots
 
-#### 4. Uninstall Everything
-Complete cleanup of TTMediaBot installation:
-- Stops all bot containers
-- Removes all containers
-- Deletes all bot folders
-- Removes Docker image
-- **Warning:** This is irreversible!
+#### 4. Uninstall Menu
+Launches a dedicated uninstallation submenu (`uninstall.sh`) offering two distinct options:
+
+- **Option 1: Standard Uninstall (Safe & Recommended)**
+  - Removes ONLY TTMediaBot containers, the `ttmediabot` Docker image, bot data directories (`bots/`), auto-updater service, and temp files.
+  - **Preserves** Docker Engine, system packages (`git`, `curl`, `jq`), and any other Docker projects on the machine.
+
+- **Option 2: Full System Purge (DESTRUCTIVE)**
+  - Complete cleanup of TTMediaBot, Docker Engine, Docker volumes, networks, iptables rules, and system packages (`git`, `curl`, `jq`, `gnupg`).
+  
+  > [!CAUTION]
+  > **Legal Disclaimer & Warning:**
+  > The developer/author assumes **NO RESPONSIBILITY OR LIABILITY** for any damage, data loss, system instability, or downtime caused by executing the Full System Purge option. Do **NOT** run Option 2 on a production server or a shared server running other critical services or containers!
 
 #### 5. Check for Updates
 Automatically checks the GitHub repository for updates.
@@ -655,4 +661,12 @@ docker ps -a -f "label=role=ttmediabot"
 ```bash
 docker stats $(docker ps -q -f "label=role=ttmediabot")
 ```
-  - Final test commit: Thu May 14 12:50:00 UTC 2026
+
+---
+
+## ⚖️ Legal Disclaimer & Terms of Use
+
+This software and associated scripts are provided "AS IS", without warranty of any kind, express or implied.
+
+- **No Liability:** The developer/author assumes **absolutely no responsibility or liability** for any direct, indirect, incidental, or consequential damages, data loss, server downtime, system instability, or hardware/software failures resulting from the use or execution of this repository, scripts (`ttbotdocker.sh`, `uninstall.sh`, `install.sh`), or bot commands.
+- **Production Warning:** Using the Full System Purge option or automated scripts on production servers or shared environments is done **at your own risk**. Ensure you have proper backups before executing systemic changes.
