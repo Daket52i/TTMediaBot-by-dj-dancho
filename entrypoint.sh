@@ -21,5 +21,8 @@ echo "PulseAudio started successfully."
 # Start Node.js PO Token provider server in background
 node /opt/bgutil-provider/server/build/main.js &
 
+# Start YouTube.js bridge server in background
+node /opt/yt-bridge/server.js &
+
 # Execute the passed command (the bot)
 exec "$@"

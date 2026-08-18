@@ -216,8 +216,8 @@ class YtmService(_Service):
             "lazy_playlist": True,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["tv_downgraded", "web"],
-                    "player_skip": ["android_vr", "android", "ios", "tv_simply"],
+                    "player_client": ["mweb", "web", "android", "ios"],
+                    "player_skip": ["webpage", "configs"],
                 }
             },
         }

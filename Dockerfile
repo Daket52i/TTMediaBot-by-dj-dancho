@@ -26,7 +26,11 @@ RUN mkdir -p /etc/apt/keyrings \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and compile the Node.js bgutil provider server
+# Install Node.js dependencies for yt-bridge
+COPY yt-bridge /opt/yt-bridge
+RUN cd /opt/yt-bridge && npm ci
+
+# Clone and compile the Node.js bgutil provider server for PO Token generation
 RUN git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-provider \
     && cd /opt/bgutil-provider/server \
     && npm ci \
@@ -38,7 +42,6 @@ RUN useradd -ms /bin/bash ttbot
 # Set working directory
 WORKDIR /home/ttbot/TTMediaBot
 
-# Add current directory to LD_LIBRARY_PATH so libTeamTalk5.so is found
 # Add current directory to LD_LIBRARY_PATH so libTeamTalk5.so is found
 ENV LD_LIBRARY_PATH=/home/ttbot/TTMediaBot:/home/ttbot/TTMediaBot/TeamTalk_DLL:$LD_LIBRARY_PATH
 
@@ -52,9 +55,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # Build argument to bust cache for core code and frequently-changing tools
 ARG CACHEBUST=1
-
-# Re-copy requirements just in case we need it below the cache line
-COPY requirements.txt .
 
 # Always ensure latest libraries and yt-dlp on every build
 RUN pip install --no-cache-dir -U pip setuptools wheel \
