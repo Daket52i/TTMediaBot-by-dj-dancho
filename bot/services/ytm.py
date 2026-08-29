@@ -62,6 +62,8 @@ class YtmService(_Service):
         self.ytmusic = None
         self.yt_config = bot.config.services.yt
         self._cookie_lock = threading.Lock()
+        self._warm_lock = threading.Lock()
+        self._is_warmed = False
         self._max_retries = 2
         
     def _fetch_and_queue_autoplay(self, video_id: str, original_url: str):
@@ -192,18 +194,24 @@ class YtmService(_Service):
         threading.Thread(target=self._pre_warm, daemon=True).start()
 
     def _pre_warm(self):
-        for attempt in range(1, 4):
-            try:
-                logging.info(f"YTM Service pre-warming (attempt {attempt}/3)...")
-                self.ytmusic_public.search("music", filter="songs", limit=1)
-                logging.info("YTM Service pre-warming finished successfully.")
+        if self._is_warmed:
+            return
+        with self._warm_lock:
+            if self._is_warmed:
                 return
-            except Exception as e:
-                if attempt < 3:
-                    logging.warning(f"YTM Pre-warming attempt {attempt} failed: {e}. Retrying in 5 seconds...")
-                    time.sleep(5)
-                else:
-                    logging.error(f"YTM Pre-warming failed after 3 attempts: {e}")
+            for attempt in range(1, 4):
+                try:
+                    logging.info(f"YTM Service pre-warming (attempt {attempt}/3)...")
+                    self.ytmusic_public.search("music", filter="songs", limit=1)
+                    self._is_warmed = True
+                    logging.info("YTM Service pre-warming finished successfully.")
+                    return
+                except Exception as e:
+                    if attempt < 3:
+                        logging.warning(f"YTM Pre-warming attempt {attempt} failed: {e}. Retrying in 5 seconds...")
+                        time.sleep(5)
+                    else:
+                        logging.error(f"YTM Pre-warming failed after 3 attempts: {e}")
 
     def download(self, track: Track, file_path: str, video: bool = False) -> None:
         start_time = time.perf_counter()
