@@ -52,7 +52,7 @@ async function netscapeCookiesToHeader(cookieFile) {
     throw error;
   }
 
-  const cookies = [];
+  const cookies = new Map();
   for (const rawLine of text.split(/\r?\n/)) {
     let line = rawLine.trim();
     if (!line) continue;
@@ -65,9 +65,9 @@ async function netscapeCookiesToHeader(cookieFile) {
     if (domain !== 'youtube.com' && !domain.endsWith('.youtube.com')) continue;
     const name = parts[5];
     const value = parts.slice(6).join('\t');
-    if (name) cookies.push(`${name}=${value}`);
+    if (name) cookies.set(name, value);
   }
-  return cookies.join('; ');
+  return Array.from(cookies, ([name, value]) => `${name}=${value}`).join('; ');
 }
 
 function pageConfigValue(page, key) {
