@@ -52,8 +52,8 @@ class YtService(_Service):
 
         self._bridge = YouTubeBridge(self.config.cookiefile_path, client="YTMUSIC")
 
-        # Finish the initial handshake before the bot starts accepting commands.
-        self._pre_warm()
+        # Run pre-warming in a background thread so the bot connects to TeamTalk immediately
+        threading.Thread(target=self._pre_warm, daemon=True, name="YT_PreWarm").start()
 
     def _pre_warm(self):
         if self._is_warmed:
