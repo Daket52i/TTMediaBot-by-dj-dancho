@@ -3,15 +3,11 @@ import http.cookiejar
 import logging
 import time
 import os
-import asyncio
 import threading
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot import Bot
-
-from py_yt.search import VideosSearch
-
 
 from bot.config.models import YtModel
 
@@ -54,15 +50,8 @@ class YtService(_Service):
 
         self._bridge = YouTubeBridge(self.config.cookiefile_path, client="YTMUSIC")
 
-        # Persistent event loop for faster async operations
-        self._loop = asyncio.new_event_loop()
-        threading.Thread(target=self._loop.run_forever, daemon=True).start()
-
         # Pre-warming: establishing connections early
         threading.Thread(target=self._pre_warm, daemon=True).start()
-
-        # Connection Keep-Alive to prevent TCP/SSL handshake lag
-        threading.Thread(target=self._connection_keeper, daemon=True).start()
 
     def _pre_warm(self):
         # Wait a few seconds for Docker network interface to fully settle
@@ -378,50 +367,24 @@ class YtService(_Service):
         if limit is None:
             limit = self.config.search_results
         start_time = time.perf_counter()
-        # py-yt-search usage (async method)
         try:
-            search_obj = VideosSearch(query, limit=limit)
-            search = asyncio.run_coroutine_threadsafe(search_obj.next(), self._loop).result()
-            
-            # Check structure: it seems to return {'result': [Items...]}
-            if search and "result" in search and search["result"]:
-                tracks: List[Track] = []
-                for video in search["result"]:
-                    # Handle potential key differences between libraries
-                    # Standard py-yt-search likely uses 'link' or 'url', or 'id'
-                    # We fallback to constructing URL from ID if link is missing
-                    url = video.get("link") or video.get("url")
-                    if not url and video.get("id"):
-                         url = f"https://www.youtube.com/watch?v={video.get('id')}"
-                    
-                    if not url:
-                         continue
-
-                    # Title handling
-                    title = video.get("title", self.bot.translator.translate("Unknown Title"))
-                    
-                    track = Track(
-                        service=self.name, url=url, name=title, type=TrackType.Dynamic, extra_info=None
-                    )
-                    tracks.append(track)
-                
-                if not tracks:
-                     raise errors.NothingFoundError("")
-                
-                duration = (time.perf_counter() - start_time) * 1000
-                logging.info(f"YT Search finished in {duration:.2f}ms for query: {query}")
-                return tracks
-            else:
+            entries = self._bridge.search(query, limit).get("entries", [])
+            tracks = [
+                Track(
+                    service=self.name,
+                    url=video["webpage_url"],
+                    name=video.get("title") or self.bot.translator.translate("Unknown Title"),
+                    type=TrackType.Dynamic,
+                    extra_info=video,
+                )
+                for video in entries
+                if video.get("webpage_url")
+            ]
+            if not tracks:
                 raise errors.NothingFoundError("")
+            duration = (time.perf_counter() - start_time) * 1000
+            logging.info(f"YT Search (YouTube.js) finished in {duration:.2f}ms for query: {query}")
+            return tracks
         except Exception as e:
             logging.error(f"YT Search failed: {e}")
             raise errors.NothingFoundError("")
-
-    def _connection_keeper(self):
-        while True:
-            time.sleep(15)
-            try:
-                # Run search for a minimal query to keep TCP/SSL connection warm
-                self.search("music", limit=1)
-            except Exception:
-                pass

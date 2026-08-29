@@ -6,5 +6,4 @@ pydantic
 pyshorteners
 requests
 ytmusicapi
-py-yt-search
 httpx[http2]

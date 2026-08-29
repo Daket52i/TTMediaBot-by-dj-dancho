@@ -62,6 +62,9 @@ class YouTubeBridge:
     def playlist(self, url: str) -> dict[str, Any]:
         return self._post("/playlist", url=url)
 
+    def search(self, query: str, limit: int) -> dict[str, Any]:
+        return self._post("/search", query=query, limit=limit)
+
     def download(self, url: str, file_path: str, video: bool = False) -> None:
         plan = self._post("/download-plan", url=url, video=video)
         headers = plan.get("http_headers") or {}

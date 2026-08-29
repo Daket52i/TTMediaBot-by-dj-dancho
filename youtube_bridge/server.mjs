@@ -323,6 +323,24 @@ async function getPlaylist(body) {
   };
 }
 
+async function searchVideos(body) {
+  const query = String(body.query || '').trim();
+  if (!query) throw new Error('Search query is required');
+  const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 50);
+  const context = await getSession(body.cookie_file);
+  const search = await context.session.search(query, { type: 'video' });
+  const videos = search?.videos || [];
+  return {
+    entries: videos.slice(0, limit).map((video) => ({
+      id: video.id,
+      videoId: video.id,
+      title: textValue(video.title),
+      uploader: textValue(video.author?.name),
+      webpage_url: video.id ? `https://www.youtube.com/watch?v=${video.id}` : ''
+    })).filter((video) => video.id)
+  };
+}
+
 async function getDownloadPlan(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
@@ -381,6 +399,7 @@ const server = http.createServer(async (req, res) => {
     if (req.url === '/resolve') return json(res, 200, await resolveTrack(body));
     if (req.url === '/info') return json(res, 200, await getInfo(body));
     if (req.url === '/playlist') return json(res, 200, await getPlaylist(body));
+    if (req.url === '/search') return json(res, 200, await searchVideos(body));
     if (req.url === '/download-plan') return json(res, 200, await getDownloadPlan(body));
     return json(res, 404, { error: 'Not found' });
   } catch (error) {
