@@ -52,8 +52,8 @@ class YtService(_Service):
 
         self._bridge = YouTubeBridge(self.config.cookiefile_path, client="YTMUSIC")
 
-        # Pre-warming: establishing connections early
-        threading.Thread(target=self._pre_warm, daemon=True).start()
+        # Finish the initial handshake before the bot starts accepting commands.
+        self._pre_warm()
 
     def _pre_warm(self):
         if self._is_warmed:
