@@ -52,7 +52,7 @@
         "default_service": "yt",
         "yt": {
             "enabled": true,
-            "cookiefile_path": "/home/ttbot/cookies.txt",
+            "cookiefile_path": "data/cookies.txt",
             "search_results": 1
         },
         "ytm": {

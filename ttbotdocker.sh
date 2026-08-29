@@ -138,10 +138,15 @@ recreate_bot_containers() {
             # Recreate
             # Ensure cookies.txt exists just in case
             if [ ! -f "$d/cookies.txt" ]; then touch "$d/cookies.txt"; fi
+            if [ -f "$d/config.json" ]; then
+                tmp_config=$(mktemp)
+                jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$d/config.json" > "$tmp_config" && mv "$tmp_config" "$d/config.json"
+            fi
             
             docker create \
                 --name "${bot_name}" \
                 --network host \
+                -e "TTBOT_INSTANCE=${bot_name}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${d}:/home/ttbot/TTMediaBot/data" \
@@ -518,6 +523,7 @@ create_bot() {
     docker create \
         --name "${current_bot_name}" \
         --network host \
+        -e "TTBOT_INSTANCE=${current_bot_name}" \
         --label "role=ttmediabot" \
         --restart always \
         -v "${CURRENT_BOT_DIR}:/home/ttbot/TTMediaBot/data" \
@@ -1302,6 +1308,7 @@ duplicate_bot() {
             docker create \
                 --name "${current_bot_name}" \
                 --network host \
+                -e "TTBOT_INSTANCE=${current_bot_name}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${CURRENT_BOT_DIR}:/home/ttbot/TTMediaBot/data" \
@@ -1352,6 +1359,8 @@ update_all_cookies() {
             echo "Updating bot: $bot_name"
             
             cp "$new_cookies_path" "$bot_dir/cookies.txt"
+            tmp_config=$(mktemp)
+            jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$bot_dir/config.json" > "$tmp_config" && mv "$tmp_config" "$bot_dir/config.json"
             
             # Ensure permissions
             chown 1000:1000 "$bot_dir/cookies.txt"

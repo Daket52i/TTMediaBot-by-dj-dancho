@@ -59,10 +59,15 @@ recreate_bot_containers() {
             # Recreate
             # Ensure cookies.txt exists just in case
             if [ ! -f "$d/cookies.txt" ]; then touch "$d/cookies.txt"; fi
+            if [ -f "$d/config.json" ]; then
+                tmp_config=$(mktemp)
+                jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$d/config.json" > "$tmp_config" && mv "$tmp_config" "$d/config.json"
+            fi
             
             docker create \
                 --name "${bot_name}" \
                 --network host \
+                -e "TTBOT_INSTANCE=${bot_name}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${d}:/home/ttbot/TTMediaBot/data" \
