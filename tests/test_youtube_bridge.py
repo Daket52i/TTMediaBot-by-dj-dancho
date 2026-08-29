@@ -24,6 +24,7 @@ bot_module.errors = errors
 services_module = types.ModuleType("bot.services")
 services_module.__path__ = [str(PROJECT_ROOT / "bot" / "services")]
 sys.modules["bot.services"] = services_module
+bot_module.services = services_module
 youtube_bridge = load_module(
     "bot.services.youtube_bridge",
     PROJECT_ROOT / "bot" / "services" / "youtube_bridge.py",
