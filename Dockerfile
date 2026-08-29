@@ -50,6 +50,11 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir "httpx[http2]>=0.28.1"
 
+# Keep the moving YouTube.js main branch in its own Docker cache layer.
+# Rebuilds reuse it; menu option 7 removes the layer and fetches main again.
+COPY youtube_bridge/package.json youtube_bridge/package.json
+RUN npm install --prefix youtube_bridge --omit=dev
+
 # Build argument to bust cache for core code and frequently-changing tools
 ARG CACHEBUST=1
 
@@ -63,9 +68,6 @@ RUN pip install --no-cache-dir -U pip setuptools wheel \
 
 # Copy project files
 COPY . .
-
-# Install the persistent YouTube.js bridge
-RUN cd youtube_bridge && npm install --omit=dev
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
