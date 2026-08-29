@@ -14,6 +14,7 @@ const USER_AGENT = process.env.YOUTUBE_BRIDGE_USER_AGENT ||
 Platform.shim.eval = async (data) => new Function(data.output)();
 
 let sessionCache = { key: null, context: null };
+let searchSessionPromise = null;
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -121,6 +122,22 @@ async function getSession(cookieFile) {
   };
   sessionCache = { key, context };
   return context;
+}
+
+async function getSearchSession() {
+  if (!searchSessionPromise) {
+    searchSessionPromise = Innertube.create({
+      client_type: ClientType.WEB,
+      cache: new UniversalCache(true),
+      enable_session_cache: true,
+      generate_session_locally: true,
+      retrieve_player: false
+    }).catch((error) => {
+      searchSessionPromise = null;
+      throw error;
+    });
+  }
+  return searchSessionPromise;
 }
 
 async function getPoToken(contentBinding) {
@@ -328,8 +345,8 @@ async function searchVideos(body) {
   if (!query) throw new Error('Search query is required');
   const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 50);
   const startedAt = performance.now();
-  const context = await getSession(body.cookie_file);
-  const search = await context.session.search(query, { type: 'video' });
+  const session = await getSearchSession();
+  const search = await session.search(query, { type: 'video' });
   const videos = search?.videos || [];
   console.log(`[youtube-bridge] searched "${query}" in ${Math.round(performance.now() - startedAt)}ms`);
   return {
