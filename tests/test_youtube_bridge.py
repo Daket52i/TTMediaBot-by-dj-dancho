@@ -58,7 +58,7 @@ class YouTubeBridgeFallbackTests(unittest.TestCase):
             "https://www.youtube.com/watch?v=48Lrud3Bxpc"
         )
 
-    @patch("bot.services.youtube_bridge.YoutubeDL")
+    @patch.object(youtube_bridge, "YoutubeDL")
     def test_ytdlp_result_is_normalized_for_the_player(self, youtube_dl):
         youtube_dl.return_value.__enter__.return_value.extract_info.return_value = {
             "id": "48Lrud3Bxpc",
