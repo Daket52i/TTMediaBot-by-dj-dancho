@@ -19,7 +19,7 @@ if command -v apt-get &> /dev/null; then
         EXTRA_PACKAGES="libportaudio2"
     fi
     sudo apt-get update -y
-    sudo apt-get install -y libmpv-dev pulseaudio p7zip-full python3-venv git python3-pip ca-certificates curl gnupg $EXTRA_PACKAGES
+    sudo apt-get install -y libmpv-dev pulseaudio p7zip-full ffmpeg python3-venv git python3-pip ca-certificates curl gnupg $EXTRA_PACKAGES
 
     # Node.js LTS Installation via NodeSource for APT
     echo "--- Configuring Node.js LTS Repository ---"
@@ -31,7 +31,7 @@ elif command -v dnf &> /dev/null; then
     if [[ "$ARCH" == "aarch64" || "$ARCH" =~ ^arm ]]; then
         EXTRA_PACKAGES="portaudio"
     fi
-    sudo dnf install -y mpv-devel pulseaudio p7zip python3 git python3-pip ca-certificates curl gnupg2 nodejs $EXTRA_PACKAGES
+    sudo dnf install -y mpv-devel pulseaudio p7zip ffmpeg python3 git python3-pip ca-certificates curl gnupg2 nodejs $EXTRA_PACKAGES
 
 elif command -v yum &> /dev/null; then
     EXTRA_PACKAGES=""
@@ -39,28 +39,28 @@ elif command -v yum &> /dev/null; then
         EXTRA_PACKAGES="portaudio"
     fi
     sudo yum install -y epel-release || true
-    sudo yum install -y mpv-devel pulseaudio p7zip python3 git python3-pip ca-certificates curl gnupg2 nodejs $EXTRA_PACKAGES
+    sudo yum install -y mpv-devel pulseaudio p7zip ffmpeg python3 git python3-pip ca-certificates curl gnupg2 nodejs $EXTRA_PACKAGES
 
 elif command -v pacman &> /dev/null; then
     EXTRA_PACKAGES=""
     if [[ "$ARCH" == "aarch64" || "$ARCH" =~ ^arm ]]; then
         EXTRA_PACKAGES="portaudio"
     fi
-    sudo pacman -Sy --noconfirm mpv pulseaudio p7zip python git python-pip ca-certificates curl gnupg nodejs $EXTRA_PACKAGES
+    sudo pacman -Sy --noconfirm mpv pulseaudio p7zip ffmpeg python git python-pip ca-certificates curl gnupg nodejs $EXTRA_PACKAGES
 
 elif command -v zypper &> /dev/null; then
     EXTRA_PACKAGES=""
     if [[ "$ARCH" == "aarch64" || "$ARCH" =~ ^arm ]]; then
         EXTRA_PACKAGES="portaudio"
     fi
-    sudo zypper install -y mpv-devel pulseaudio p7zip python3 git python3-pip ca-certificates curl gpg2 nodejs $EXTRA_PACKAGES
+    sudo zypper install -y mpv-devel pulseaudio p7zip ffmpeg python3 git python3-pip ca-certificates curl gpg2 nodejs $EXTRA_PACKAGES
 
 elif command -v apk &> /dev/null; then
     EXTRA_PACKAGES=""
     if [[ "$ARCH" == "aarch64" || "$ARCH" =~ ^arm ]]; then
         EXTRA_PACKAGES="portaudio"
     fi
-    sudo apk add --no-cache mpv-dev pulseaudio p7zip python3 git py3-pip ca-certificates curl gnupg nodejs $EXTRA_PACKAGES
+    sudo apk add --no-cache mpv-dev pulseaudio p7zip ffmpeg python3 git py3-pip ca-certificates curl gnupg nodejs $EXTRA_PACKAGES
 
 else
     echo "Error: Unsupported package manager. Please install dependencies manually."
@@ -85,8 +85,9 @@ if [ -d "TTMediaBot" ]; then
     # Install project libraries
     pip3 install -r requirements.txt
 
-    # Update yt-dlp to the pre-release version
-    pip install -U --pre "yt-dlp[default]"
+    echo "--- Installing YouTube.js bridge dependencies ---"
+    (cd youtube_bridge && npm install --omit=dev)
+
 
     # Adjust httpx version
     echo "--- Adjusting httpx version ---"

@@ -56,19 +56,16 @@ ARG CACHEBUST=1
 # Re-copy requirements just in case we need it below the cache line
 COPY requirements.txt .
 
-# Always ensure latest libraries and yt-dlp on every build
+# Refresh Python dependencies on every build
 RUN pip install --no-cache-dir -U pip setuptools wheel \
     && pip install --no-cache-dir -U -r requirements.txt \
-    && pip install --no-cache-dir -U --pre "yt-dlp[default]" \
     && pip install --no-cache-dir "httpx[http2]>=0.28.1"
 
 # Copy project files
 COPY . .
 
-# Download and extract yt-dlp plugin for bgutil
-RUN curl -fsSL "https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/latest/download/bgutil-ytdlp-pot-provider-rs.zip" -o /tmp/plugin.zip \
-    && unzip -o /tmp/plugin.zip -d /usr/local/lib/python3.10/site-packages/ \
-    && rm /tmp/plugin.zip
+# Install the persistent YouTube.js bridge
+RUN cd youtube_bridge && npm install --omit=dev
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh

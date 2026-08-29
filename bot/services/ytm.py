@@ -6,8 +6,6 @@ import threading
 import os
 import json
 import http.cookiejar
-import shutil
-import tempfile
 import requests
 import httpx
 
@@ -36,21 +34,18 @@ class HTTP2Session(requests.Session):
             return resp
         except Exception as e:
             return super().request(method, url, **kwargs)
-from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Generator
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot import Bot
 
-from yt_dlp import YoutubeDL
-from yt_dlp.downloader import get_suitable_downloader
-from yt_dlp.utils import DownloadError
 from ytmusicapi import YTMusic
 
 from bot.config.models import YtmModel
 from bot.player.enums import TrackType
 from bot.player.track import Track
 from bot.services import Service as _Service
+from bot.services.youtube_bridge import YouTubeBridge
 from bot import errors
 
 
@@ -196,31 +191,7 @@ class YtmService(_Service):
         # Connection Keep-Alive to prevent TCP/SSL handshake lag
         threading.Thread(target=self._connection_keeper, daemon=True).start()
 
-        self._ydl_config = {
-            "skip_download": True,
-            "format": "bestaudio/best",
-            "format_sort": ["res:144", "codec:mp3", "codec:m4a", "codec:opus"],
-            "youtube_include_dash_manifest": False,
-            "youtube_include_hls_manifest": False,
-            "socket_timeout": 10,
-            "logger": logging.getLogger("root"),
-            "quiet": True,
-            "no_warnings": True,
-            "nocheckcertificate": True,
-            "geo_bypass": True,
-            "check_formats": False,
-            "noplaylist": True,
-            "js_runtimes": {"node": {}},
-            "allowed_extractors": ["youtube", "youtube:playlist", "youtube:search", "youtube:tab"],
-            "cachedir": False,
-            "lazy_playlist": True,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["mweb", "web", "android", "ios"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-        }
+        self._bridge = YouTubeBridge(self.yt_config.cookiefile_path, client="YTMUSIC")
 
         # Pre-warming for YTM
         threading.Thread(target=self._pre_warm, daemon=True).start()
@@ -242,71 +213,12 @@ class YtmService(_Service):
                 else:
                     logging.error(f"YTM Pre-warming failed after 3 attempts: {e}")
 
-    @contextmanager
-    def _temp_cookie_file(self) -> Generator[Optional[str], None, None]:
-        if not self.yt_config.cookiefile_path or not os.path.isfile(self.yt_config.cookiefile_path):
-            yield None
-            return
-
-        import uuid
-        temp_cookie_path = os.path.join(
-            tempfile.gettempdir(), 
-            f"ytm_cookies_{os.getpid()}_{uuid.uuid4().hex}.txt"
-        )
-        
-        try:
-            with self._cookie_lock:
-                shutil.copy2(self.yt_config.cookiefile_path, temp_cookie_path)
-            yield temp_cookie_path
-        finally:
-            if os.path.isfile(temp_cookie_path):
-                try:
-                    os.remove(temp_cookie_path)
-                except Exception as e:
-                    logging.debug(f"Failed to remove temp cookie file {temp_cookie_path}: {e}")
-
     def download(self, track: Track, file_path: str, video: bool = False) -> None:
         start_time = time.perf_counter()
-        # Re-use YT Service logic or bare extraction
-        # Since implementation plan said re-use logic:
-        info = track.extra_info
-        if not info:
-             super().download(track, file_path, video=video)
-             duration = (time.perf_counter() - start_time) * 1000
-             logging.info(f"YTM Download finished in {duration:.2f}ms for {track.name}")
-             return
-        
-        # Instantiate per request for thread safety
-        config = self._ydl_config.copy()
-        if not video:
-            config["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            }]
-        else:
-            config["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            config["merge_output_format"] = "mp4"
-
-        config["skip_download"] = False
-        config["outtmpl"] = file_path.rsplit(".", 1)[0] + ".%(ext)s"
-
-        url = track.url
-        if track.extra_info:
-            if "webpage_url" in track.extra_info:
-                url = track.extra_info["webpage_url"]
-            elif "id" in track.extra_info:
-                url = f"https://music.youtube.com/watch?v={track.extra_info['id']}"
-            elif "videoId" in track.extra_info:
-                url = f"https://music.youtube.com/watch?v={track.extra_info['videoId']}"
-
-        with self._temp_cookie_file() as cookie_file:
-            if cookie_file:
-                config["cookiefile"] = cookie_file
-            
-            with YoutubeDL(config) as ydl:
-                ydl.download([url])
-
+        info = track.extra_info or {}
+        video_id = info.get("videoId") or info.get("id")
+        source_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else track.url
+        self._bridge.download(source_url, file_path, video=video)
         duration = (time.perf_counter() - start_time) * 1000
         logging.info(f"YTM Download finished in {duration:.2f}ms for {track.name}")
 
@@ -320,100 +232,60 @@ class YtmService(_Service):
         if not (url or extra_info):
             raise errors.InvalidArgumentError()
 
-        # If process=True, we are likely in the player trying to resolve the stream URL
+        # Stream resolution is handled by the persistent YouTube.js bridge.
         if process:
-             # Instantiate per request for thread safety
-             config = self._ydl_config.copy()
-             with self._temp_cookie_file() as cookie_file:
-                  if cookie_file:
-                       config["cookiefile"] = cookie_file
-                  
-                  with YoutubeDL(config) as ydl:
-                       # If we have extra_info, use it, otherwise extract from URL
-                       if extra_info:
-                            info = extra_info
-                            if "url" not in info and "videoId" in info:
-                                 url = f"https://www.youtube.com/watch?v={info['videoId']}"
-                                 try:
-                                     info = ydl.extract_info(url, process=False)
-                                 except DownloadError as e:
-                                     logging.error(f"YTM Get: yt-dlp DownloadError for '{url}': {e}")
-                                     raise errors.ServiceError(str(e))
-                       else:
-                            try:
-                                info = ydl.extract_info(url, process=False)
-                            except DownloadError as e:
-                                logging.error(f"YTM Get: yt-dlp DownloadError for '{url}': {e}")
-                                raise errors.ServiceError(str(e))
-                       
-                       if info is None:
-                            raise errors.ServiceError("Failed to extract video info")
+            info = dict(extra_info or {})
+            video_id = info.get("videoId") or info.get("id")
+            resolved = self._bridge.resolve(url=url if not video_id else "", video_id=video_id or "")
+            stream = {**info, **resolved}
+            stream_url = resolved.get("url")
+            if not stream_url:
+                raise errors.ServiceError("YouTube.js returned no stream URL")
 
-                       # Process stream
-                       try:
-                           stream = ydl.process_ie_result(info)
-                       except DownloadError as e:
-                           logging.error(f"YTM Get: Failed to process stream for '{url}': {e}")
-                           raise errors.ServiceError(str(e))
-                       if "url" in stream:
-                            url = stream["url"]
-                       else:
-                            raise errors.ServiceError("No stream URL found in processed result")
-                       
-                       title = stream.get("title", self.bot.translator.translate("Unknown"))
-                       if "uploader" in stream:
-                            title += " - {}".format(stream["uploader"])
-                       format = "mp3"
-                       
-                       duration = (time.perf_counter() - start_time) * 1000
-                       logging.info(f"YTM Get (Process) finished in {duration:.2f}ms for {title}")
-                  
-                  # TRIGGER BACKGROUND AUTOPLAY FETCH
-                  current_video_id = None
-                  if extra_info and "videoId" in extra_info:
-                       current_video_id = extra_info["videoId"]
-                  elif "id" in stream:
-                       current_video_id = stream["id"]
-                  
-                  if current_video_id:
-                       should_fetch = False
-                       try:
-                            if self.bot.player.track_list:
-                                 last_track = self.bot.player.track_list[-1]
-                                 last_video_id = None
-                                 if last_track.extra_info and 'videoId' in last_track.extra_info:
-                                      last_video_id = last_track.extra_info.get('videoId')
-                                 
-                                 if not last_video_id and hasattr(last_track, '_url') and last_track._url:
-                                      l_url = last_track._url
-                                      if "v=" in l_url:
-                                           last_video_id = l_url.split("v=")[1].split("&")[0]
-                                      elif "youtu.be" in l_url:
-                                           last_video_id = l_url.split("/")[-1]
-                                 
-                                 if last_video_id and last_video_id == current_video_id:
-                                      should_fetch = True
-                                      logging.info(f"[YTM] Autoplay trigger: Current track IS last track (ID match: {current_video_id})")
-                       except Exception as e:
-                            logging.debug(f"[YTM] Trace bot player state error: {e}")
-                       
-                       if should_fetch:
-                            try:
-                                 self.bot.loop.create_task(self._fetch_autoplay_async(current_video_id))
-                            except Exception:
-                                 threading.Thread(target=self._fetch_autoplay_sync, args=(current_video_id,), daemon=True).start()
-                  
-                  return [
-                       Track(
-                            service=self.name,
-                            name=title,
-                            url=url,
-                            type=TrackType.Default,
-                            format=format,
-                            extra_info=stream,
-                            extracted_at=time.perf_counter(),
-                       )
-                  ]
+            title = resolved.get("title") or info.get("title") or self.bot.translator.translate("Unknown")
+            uploader = resolved.get("uploader")
+            if uploader:
+                title += f" - {uploader}"
+
+            current_video_id = resolved.get("id") or video_id
+            if current_video_id:
+                should_fetch = False
+                try:
+                    if self.bot.player.track_list:
+                        last_track = self.bot.player.track_list[-1]
+                        last_info = last_track.extra_info or {}
+                        last_video_id = last_info.get("videoId") or last_info.get("id")
+                        if not last_video_id and hasattr(last_track, "_url") and last_track._url:
+                            l_url = last_track._url
+                            if "v=" in l_url:
+                                last_video_id = l_url.split("v=")[1].split("&")[0]
+                            elif "youtu.be" in l_url:
+                                last_video_id = l_url.split("/")[-1]
+                        should_fetch = bool(last_video_id and last_video_id == current_video_id)
+                        if should_fetch:
+                            logging.info(f"[YTM] Autoplay trigger: Current track IS last track (ID match: {current_video_id})")
+                except Exception as e:
+                    logging.debug(f"[YTM] Trace bot player state error: {e}")
+
+                if should_fetch:
+                    try:
+                        self.bot.loop.create_task(self._fetch_autoplay_async(current_video_id))
+                    except Exception:
+                        threading.Thread(target=self._fetch_autoplay_sync, args=(current_video_id,), daemon=True).start()
+
+            duration = (time.perf_counter() - start_time) * 1000
+            logging.info(f"YTM Get (Process/YouTube.js) finished in {duration:.2f}ms for {title}")
+            return [
+                Track(
+                    service=self.name,
+                    name=title,
+                    url=stream_url,
+                    type=TrackType.Live if resolved.get("is_live") else TrackType.Default,
+                    format="mp3",
+                    extra_info=stream,
+                    extracted_at=time.perf_counter(),
+                )
+            ]
 
         # If process=False, we are adding to queue (The "Radio" logic)
         if extra_info and not url:

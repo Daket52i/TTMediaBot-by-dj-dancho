@@ -4,18 +4,12 @@ import logging
 import time
 import os
 import asyncio
-import shutil
-import tempfile
 import threading
-from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Generator
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot import Bot
 
-from yt_dlp import YoutubeDL
-from yt_dlp.downloader import get_suitable_downloader
-from yt_dlp.utils import DownloadError
 from py_yt.search import VideosSearch
 
 
@@ -24,6 +18,7 @@ from bot.config.models import YtModel
 from bot.player.enums import TrackType
 from bot.player.track import Track
 from bot.services import Service as _Service
+from bot.services.youtube_bridge import YouTubeBridge
 from bot import errors
 
 
@@ -57,31 +52,7 @@ class YtService(_Service):
                 "YouTube may block requests requiring authentication."
             )
 
-        self._ydl_config = {
-            "skip_download": True,
-            "format": "ba[ext=m4a]/ba[ext=webm]/ba/bestaudio/best",
-            "format_sort": ["codec:opus", "codec:m4a", "codec:mp3", "res:144"],
-            "youtube_include_dash_manifest": False,
-            "youtube_include_hls_manifest": False,
-            "socket_timeout": 10,
-            "logger": logging.getLogger("root"),
-            "quiet": True,
-            "no_warnings": True,
-            "nocheckcertificate": True,
-            "geo_bypass": True,
-            "check_formats": False,
-            "noplaylist": True,
-            "js_runtimes": {"node": {}},
-            "allowed_extractors": ["youtube", "youtube:playlist", "youtube:search", "youtube:tab"],
-            "cachedir": False,
-            "lazy_playlist": True,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["mweb", "web", "android", "ios"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-        }
+        self._bridge = YouTubeBridge(self.config.cookiefile_path, client="WEB")
 
         # Persistent event loop for faster async operations
         self._loop = asyncio.new_event_loop()
@@ -110,68 +81,12 @@ class YtService(_Service):
                 else:
                     logging.error(f"YT Pre-warming failed after 3 attempts: {e}")
 
-    @contextmanager
-    def _temp_cookie_file(self) -> Generator[Optional[str], None, None]:
-        if not self.config.cookiefile_path or not os.path.isfile(self.config.cookiefile_path):
-            yield None
-            return
-
-        import uuid
-        temp_cookie_path = os.path.join(
-            tempfile.gettempdir(), 
-            f"yt_cookies_{os.getpid()}_{uuid.uuid4().hex}.txt"
-        )
-        
-        try:
-            with self._cookie_lock:
-                shutil.copy2(self.config.cookiefile_path, temp_cookie_path)
-            yield temp_cookie_path
-        finally:
-            if os.path.isfile(temp_cookie_path):
-                try:
-                    os.remove(temp_cookie_path)
-                except Exception as e:
-                    logging.debug(f"Failed to remove temp cookie file {temp_cookie_path}: {e}")
-            
     def download(self, track: Track, file_path: str, video: bool = False) -> None:
         start_time = time.perf_counter()
-        info = track.extra_info
-        if not info:
-            super().download(track, file_path, video=video)
-            duration = (time.perf_counter() - start_time) * 1000
-            logging.info(f"YT Download finished in {duration:.2f}ms for {track.name}")
-            return
-        
-        # Instantiate per request for thread safety
-        config = self._ydl_config.copy()
-        config["skip_download"] = False
-        
-        if not video:
-            config["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            }]
-        else:
-            config["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            config["merge_output_format"] = "mp4"
-
-        config["outtmpl"] = file_path.rsplit(".", 1)[0] + ".%(ext)s"
-
-        url = track.url
-        if track.extra_info:
-            if "webpage_url" in track.extra_info:
-                url = track.extra_info["webpage_url"]
-            elif "id" in track.extra_info:
-                url = f"https://www.youtube.com/watch?v={track.extra_info['id']}"
-
-        with self._temp_cookie_file() as cookie_file:
-            if cookie_file:
-                config["cookiefile"] = cookie_file
-            
-            with YoutubeDL(config) as ydl:
-                ydl.download([url])
-
+        info = track.extra_info or {}
+        video_id = info.get("videoId") or info.get("id") or info.get("contentId")
+        source_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else track.url
+        self._bridge.download(source_url, file_path, video=video)
         duration = (time.perf_counter() - start_time) * 1000
         logging.info(f"YT Download finished in {duration:.2f}ms for {track.name}")
 
@@ -211,179 +126,110 @@ class YtService(_Service):
         process: bool,
         start_time: float,
     ) -> List[Track]:
-        config = self._ydl_config.copy()
-        with self._temp_cookie_file() as cookie_file:
-            if cookie_file:
-                config["cookiefile"] = cookie_file
-            elif self.config.cookiefile_path:
-                logging.warning(
-                    f"YT Get: Cookie file '{self.config.cookiefile_path}' not found. "
-                    "Proceeding without cookies — YouTube may block this request."
-                )
-            
-            ydl_start = time.perf_counter()
-            with YoutubeDL(config) as ydl:
-                ydl_duration = (time.perf_counter() - ydl_start) * 1000
-                logging.info(f"YT Get: YoutubeDL initialized in {ydl_duration:.2f}ms")
-                if extra_info:
-                     info = extra_info
-                     v_id = info.get("videoId") or info.get("contentId") or info.get("id")
-                     if "url" not in info and v_id:
-                         url = f"https://www.youtube.com/watch?v={v_id}"
-                         try:
-                             info = ydl.extract_info(url, process=False)
-                         except DownloadError as e:
-                             logging.error(f"YT Get: yt-dlp DownloadError for '{url}': {e}")
-                             raise errors.ServiceError(str(e))
-                else:
-                    try:
-                        info = ydl.extract_info(url, process=False)
-                    except DownloadError as e:
-                        error_msg = str(e)
-                        if "Sign in to confirm" in error_msg or "cookies" in error_msg.lower():
-                            logging.error(
-                                f"YT Get: YouTube requires authentication for '{url}'. "
-                                "Please provide a valid cookies.txt file. "
-                                "See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
-                            )
-                        else:
-                            logging.error(f"YT Get: yt-dlp DownloadError for '{url}': {error_msg}")
-                            if "Signature solving failed" in error_msg or "JavaScript runtime" in error_msg:
-                                logging.error("YT Get: Possible missing JavaScript runtime or challenge solver. Check if Node.js is correctly installed in the environment.")
-                        raise errors.ServiceError(str(e))
-                
-                if info is None:
-                    raise errors.ServiceError("Failed to extract video info")
+        info = dict(extra_info or {})
+        video_id = info.get("videoId") or info.get("contentId") or info.get("id")
 
-                info_type = None
-                if "_type" in info:
-                    info_type = info["_type"]
-                if info_type == "url" and not info.get("ie_key"):
-                    return self.get(info["url"], process=False)
-                elif info_type == "playlist":
-                    tracks: List[Track] = []
-                    playlist_title = info.get("title") or info.get("playlist_title")
-                    playlist_uploader = info.get("uploader") or info.get("playlist_uploader")
-                    
-                    for entry in info["entries"]:
-                        try:
-                            # Inject playlist metadata into the entry so tracks carry it
-                            if playlist_title:
-                                entry["playlist_title"] = playlist_title
-                            if playlist_uploader:
-                                entry["playlist_uploader"] = playlist_uploader
-                            
-                            data = self.get("", extra_info=entry, process=False)
-                            tracks += data
-                        except errors.ServiceError:
-                            logging.warning(f"YT Get: Skipping playlist entry due to error")
-                            continue
-                    duration = (time.perf_counter() - start_time) * 1000
-                    logging.info(f"YT Get (Playlist) finished in {duration:.2f}ms for {url}")
-                    return tracks
-                if not process:
-                    # If extra_info was provided (e.g. from an entry inside a playlist loop), return the single Track directly
-                    if extra_info:
-                        return [
-                            Track(service=self.name, extra_info=info, type=TrackType.Dynamic)
-                        ]
+        if not process:
+            if extra_info:
+                if video_id and not info.get("webpage_url"):
+                    info["webpage_url"] = f"https://www.youtube.com/watch?v={video_id}"
+                return [Track(service=self.name, url=info.get("webpage_url", url), extra_info=info, type=TrackType.Dynamic)]
 
-                    # Fetch related videos for queueing if it's a single standalone video request!
-                    video_id = info.get("id") or info.get("videoId")
-                    if not video_id and url:
-                         if "v=" in url:
-                              video_id = url.split("v=")[1].split("&")[0]
-                         elif "youtu.be" in url:
-                              video_id = url.split("/")[-1]
-                    
-                    if video_id:
-                         try:
-                              # First, add the original video track
-                              original_title = info.get("title", self.bot.translator.translate("Unknown Title"))
-                              if "uploader" in info:
-                                   original_title += " - {}".format(info["uploader"])
-                              
-                              original_track = Track(
-                                   service=self.name,
-                                   url=f"https://www.youtube.com/watch?v={video_id}",
-                                   name=original_title,
-                                   type=TrackType.Dynamic,
-                                   extra_info=info
-                              )
-                              
-                              # Then fetch recommendations (limit to 20 matching YTM behavior)
-                              recs = self._get_recommendations(video_id, limit=20)
-                              duration = (time.perf_counter() - start_time) * 1000
-                              logging.info(f"YT Get (Watch Playlist) finished in {duration:.2f}ms for video_id {video_id}")
-                              return [original_track] + recs
-                         except Exception as e:
-                              logging.error(f"YT Watch Playlist failed: {e}")
-                    
-                    duration = (time.perf_counter() - start_time) * 1000
-                    logging.info(f"YT Get (No Process) finished in {duration:.2f}ms for {url}")
-                    return [
-                        Track(service=self.name, extra_info=info, type=TrackType.Dynamic)
-                    ]
-                try:
-                    stream = ydl.process_ie_result(info)
-                except DownloadError as e:
-                    logging.error(f"YT Get: Failed to process stream for '{url}': {e}")
-                    raise errors.ServiceError(str(e))
-                except Exception:
-                    raise errors.ServiceError()
-                
-                if "url" in stream:
-                    url = stream["url"]
-                else:
-                    raise errors.ServiceError("No stream URL found in processed result")
-                title = stream["title"]
-                if "uploader" in stream:
-                    title += " - {}".format(stream["uploader"])
-                format = "mp3"
-                if "is_live" in stream and stream["is_live"]:
-                    track_type = TrackType.Live
-                else:
-                    track_type = TrackType.Default
-                
-                # TRIGGER BACKGROUND AUTOPLAY FETCH (matching YTM behavior)
-                current_video_id = None
-                if extra_info:
-                     current_video_id = extra_info.get("id") or extra_info.get("videoId")
-                if not current_video_id and "id" in stream:
-                     current_video_id = stream["id"]
-                
-                if current_video_id:
-                     should_fetch = False
-                     try:
-                           if self.bot.player.track_list:
-                                last_track = self.bot.player.track_list[-1]
-                                last_video_id = None
-                                if last_track.extra_info:
-                                     last_video_id = last_track.extra_info.get('id') or last_track.extra_info.get('videoId')
-                                
-                                if not last_video_id and hasattr(last_track, '_url') and last_track._url:
-                                     l_url = last_track._url
-                                     if "v=" in l_url:
-                                          last_video_id = l_url.split("v=")[1].split("&")[0]
-                                     elif "youtu.be" in l_url:
-                                          last_video_id = l_url.split("/")[-1]
-                                
-                                if last_video_id and last_video_id == current_video_id:
-                                     should_fetch = True
-                     except Exception as e:
-                          logging.debug(f"[YT] Trace bot player state error: {e}")
-                     
-                     if should_fetch:
-                          try:
-                               self.bot.loop.create_task(self._fetch_autoplay_async(current_video_id))
-                          except Exception:
-                               threading.Thread(target=self._fetch_autoplay_sync, args=(current_video_id,), daemon=True).start()
-
+            if "list=" in url and "v=" not in url:
+                playlist = self._bridge.playlist(url)
+                tracks: List[Track] = []
+                for entry in playlist.get("entries", []):
+                    entry["playlist_title"] = playlist.get("title")
+                    entry["playlist_uploader"] = playlist.get("uploader")
+                    tracks.append(
+                        Track(
+                            service=self.name,
+                            url=entry.get("webpage_url", ""),
+                            name=entry.get("title", ""),
+                            extra_info=entry,
+                            type=TrackType.Dynamic,
+                        )
+                    )
                 duration = (time.perf_counter() - start_time) * 1000
-                logging.info(f"YT Get (Process) finished in {duration:.2f}ms for {title}")
-                return [
-                    Track(service=self.name, url=url, name=title, format=format, type=track_type, extra_info=stream, extracted_at=time.perf_counter())
-                ]
+                logging.info(f"YT Get (Playlist) finished in {duration:.2f}ms for {url}")
+                return tracks
+
+            info = self._bridge.info(url=url)
+            video_id = info.get("id") or info.get("videoId")
+            title = info.get("title", self.bot.translator.translate("Unknown Title"))
+            if info.get("uploader"):
+                title += f" - {info['uploader']}"
+            original_track = Track(
+                service=self.name,
+                url=info.get("webpage_url", url),
+                name=title,
+                type=TrackType.Dynamic,
+                extra_info=info,
+            )
+            if video_id:
+                try:
+                    recs = self._get_recommendations(video_id, limit=20)
+                    duration = (time.perf_counter() - start_time) * 1000
+                    logging.info(f"YT Get (Watch Playlist) finished in {duration:.2f}ms for video_id {video_id}")
+                    return [original_track] + recs
+                except Exception as e:
+                    logging.error(f"YT Watch Playlist failed: {e}")
+            return [original_track]
+
+        if not video_id:
+            if not url:
+                raise errors.ServiceError("No YouTube video ID available for stream resolution")
+            resolved = self._bridge.resolve(url=url)
+        else:
+            resolved = self._bridge.resolve(video_id=video_id)
+
+        stream = {**info, **resolved}
+        stream_url = resolved.get("url")
+        if not stream_url:
+            raise errors.ServiceError("YouTube.js returned no stream URL")
+        title = resolved.get("title") or info.get("title") or self.bot.translator.translate("Unknown")
+        uploader = resolved.get("uploader") or info.get("uploader")
+        if uploader:
+            title += f" - {uploader}"
+        track_type = TrackType.Live if resolved.get("is_live") else TrackType.Default
+        current_video_id = resolved.get("id") or video_id
+
+        if current_video_id:
+            should_fetch = False
+            try:
+                if self.bot.player.track_list:
+                    last_track = self.bot.player.track_list[-1]
+                    last_info = last_track.extra_info or {}
+                    last_video_id = last_info.get("id") or last_info.get("videoId")
+                    if not last_video_id and hasattr(last_track, "_url") and last_track._url:
+                        l_url = last_track._url
+                        if "v=" in l_url:
+                            last_video_id = l_url.split("v=")[1].split("&")[0]
+                        elif "youtu.be" in l_url:
+                            last_video_id = l_url.split("/")[-1]
+                    should_fetch = bool(last_video_id and last_video_id == current_video_id)
+            except Exception as e:
+                logging.debug(f"[YT] Trace bot player state error: {e}")
+
+            if should_fetch:
+                try:
+                    self.bot.loop.create_task(self._fetch_autoplay_async(current_video_id))
+                except Exception:
+                    threading.Thread(target=self._fetch_autoplay_sync, args=(current_video_id,), daemon=True).start()
+
+        duration = (time.perf_counter() - start_time) * 1000
+        logging.info(f"YT Get (Process/YouTube.js) finished in {duration:.2f}ms for {title}")
+        return [
+            Track(
+                service=self.name,
+                url=stream_url,
+                name=title,
+                format="mp3",
+                type=track_type,
+                extra_info=stream,
+                extracted_at=time.perf_counter(),
+            )
+        ]
 
     def _get_recommendations(self, video_id: str, limit: int = 5) -> List[Track]:
         try:

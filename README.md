@@ -40,7 +40,7 @@ This fork includes optimized support for **YouTube Music** alongside regular You
 - **Optimized Libraries:** 
   - YouTube uses `py-yt-search` - a fast and modern Python library for YouTube searches
   - YouTube Music uses `ytmusicapi` - the official YouTube Music API library
-  - Both services use `yt-dlp` for audio extraction
+  - Both services use a persistent `youtubei.js`/YouTube.js bridge for stream resolution; `ytmusicapi` remains responsible for YouTube Music search/autoplay
 - **Performance Focus:** Designed to run with minimal bottlenecks, ensuring smooth playback and quick search results
 - **Unified Cookie System:** Both YouTube and YouTube Music use the same cookies configuration for authentication
 - **📦 Playlist & Album Downloads:** Full support for downloading entire collections via the `dlp` command with metadata-aware naming
@@ -418,7 +418,7 @@ echo "$(pwd)/cookies.txt"
 Copy this full path and paste it when the bot creation or update script asks for the cookies file location.
 
 > [!IMPORTANT]
-> **Note:** Do not use very large cookie files. If the cookies file is too large, yt-dlp may not recognize it and the bot won't play music. Use cookies only from YouTube/Google domains.
+> **Note:** The YouTube.js bridge reads Netscape-format `cookies.txt` files and forwards only YouTube/Google cookies to the Innertube session. Keep the cookie file limited to the required YouTube/Google domains.
 
 ### Updating Expired Cookies
 
