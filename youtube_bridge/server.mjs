@@ -2,18 +2,18 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { URL } from 'node:url';
-import { Innertube, UniversalCache, Platform } from 'youtubei.js';
+import { ClientType, Innertube, UniversalCache, Platform } from 'youtubei.js';
 
 const HOST = process.env.YOUTUBE_BRIDGE_HOST || '127.0.0.1';
 const PORT = Number(process.env.YOUTUBE_BRIDGE_PORT || 4417);
 const POT_URL = process.env.POT_PROVIDER_URL || 'http://127.0.0.1:4416/get_pot';
 const USER_AGENT = process.env.YOUTUBE_BRIDGE_USER_AGENT ||
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1';
 
 // YouTube.js 18 requires an evaluator to decipher player signatures/nsig.
 Platform.shim.eval = async (data) => new Function(data.output)();
 
-let sessionCache = { key: null, session: null };
+let sessionCache = { key: null, context: null };
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -60,8 +60,8 @@ async function netscapeCookiesToHeader(cookieFile) {
 
     const parts = line.split('\t');
     if (parts.length < 7) continue;
-    const domain = parts[0].toLowerCase();
-    if (!domain.includes('youtube.com') && !domain.includes('google.com')) continue;
+    const domain = parts[0].toLowerCase().replace(/^\./, '');
+    if (domain !== 'youtube.com' && !domain.endsWith('.youtube.com')) continue;
     const name = parts[5];
     const value = parts.slice(6).join('\t');
     if (name) cookies.push(`${name}=${value}`);
@@ -69,30 +69,66 @@ async function netscapeCookiesToHeader(cookieFile) {
   return cookies.join('; ');
 }
 
+function pageConfigValue(page, key) {
+  const match = page.match(new RegExp(`"${key}":"([^"]+)"`));
+  if (!match) return undefined;
+  try {
+    return JSON.parse(`"${match[1]}"`);
+  } catch {
+    return match[1];
+  }
+}
+
+async function getWebSessionData(cookie) {
+  if (!cookie) return {};
+  const response = await fetch('https://m.youtube.com/', {
+    headers: {
+      'Cookie': cookie,
+      'User-Agent': USER_AGENT,
+      'Accept-Language': 'en-US,en;q=0.9'
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`YouTube session page returned HTTP ${response.status}`);
+  }
+  const page = await response.text();
+  return {
+    dataSyncId: pageConfigValue(page, 'DATASYNC_ID'),
+    visitorData: pageConfigValue(page, 'VISITOR_DATA')
+  };
+}
+
 async function getSession(cookieFile) {
   const key = cookieFileKey(cookieFile);
-  if (sessionCache.key === key && sessionCache.session) return sessionCache.session;
+  if (sessionCache.key === key && sessionCache.context) return sessionCache.context;
 
   const cookie = await netscapeCookiesToHeader(cookieFile);
+  const webSession = await getWebSessionData(cookie);
   const session = await Innertube.create({
     cookie: cookie || undefined,
     user_agent: USER_AGENT,
+    client_type: ClientType.MWEB,
+    visitor_data: webSession.visitorData,
     cache: new UniversalCache(true),
     enable_session_cache: true,
     generate_session_locally: true,
     retrieve_player: true
   });
 
-  sessionCache = { key, session };
-  return session;
+  const context = {
+    session,
+    poBinding: webSession.dataSyncId || null
+  };
+  sessionCache = { key, context };
+  return context;
 }
 
-async function getPoToken(videoId) {
+async function getPoToken(contentBinding) {
   try {
     const response = await fetch(POT_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ content_binding: videoId })
+      body: JSON.stringify({ content_binding: contentBinding })
     });
     if (!response.ok) {
       const body = await response.text();
@@ -174,11 +210,11 @@ function formatPayload(format) {
   };
 }
 
-async function getPlayableInfo(session, videoId, client) {
+async function getPlayableInfo(session, videoId, client, poToken) {
   if (client === 'YTMUSIC') {
-    return session.music.getInfo(videoId);
+    return session.music.getInfo(videoId, { po_token: poToken });
   }
-  return session.getBasicInfo(videoId, { client });
+  return session.getBasicInfo(videoId, { client, po_token: poToken });
 }
 
 function playabilityDescription(info) {
@@ -187,20 +223,19 @@ function playabilityDescription(info) {
   return reason ? `${status}: ${reason}` : status;
 }
 
-async function resolveFormat(session, videoId, requestedClient, formatOptions) {
+async function resolveFormat(context, videoId, requestedClient, formatOptions) {
   // WEB is SABR-only for many videos in 2026. MWEB still exposes classic
   // adaptive formats and is the preferred web playback client here.
   const clients = requestedClient === 'YTMUSIC'
     ? ['YTMUSIC', 'MWEB']
     : ['MWEB'];
   const failures = [];
+  const { session, poBinding } = context;
 
   for (const client of clients) {
     try {
-      // Current web/mweb/web_music enforcement requires the PO token for GVS,
-      // not for the player request. Fetch formats first, then bind the token
-      // to the final GoogleVideo URL during deciphering.
-      const info = await getPlayableInfo(session, videoId, client);
+      const poToken = await getPoToken(poBinding || videoId);
+      const info = await getPlayableInfo(session, videoId, client, poToken);
       if (!info?.streaming_data) {
         throw new Error(`no streaming data (${playabilityDescription(info)})`);
       }
@@ -210,7 +245,6 @@ async function resolveFormat(session, videoId, requestedClient, formatOptions) {
         throw new Error('YouTube player is unavailable');
       }
 
-      const poToken = await getPoToken(videoId);
       session.session.player.po_token = poToken;
       format.url = await format.decipher(session.session.player);
 
@@ -233,10 +267,10 @@ async function resolveFormat(session, videoId, requestedClient, formatOptions) {
 async function resolveTrack(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const session = await getSession(body.cookie_file);
+  const context = await getSession(body.cookie_file);
   const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
 
-  const { info, format, client } = await resolveFormat(session, videoId, requestedClient, {
+  const { info, format, client } = await resolveFormat(context, videoId, requestedClient, {
     type: 'audio',
     quality: 'best',
     format: 'any'
@@ -255,9 +289,10 @@ async function resolveTrack(body) {
 async function getInfo(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const session = await getSession(body.cookie_file);
+  const context = await getSession(body.cookie_file);
   const client = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
-  const info = await getPlayableInfo(session, videoId, client);
+  const poToken = await getPoToken(context.poBinding || videoId);
+  const info = await getPlayableInfo(context.session, videoId, client, poToken);
   return {
     ...infoPayload(info, videoId),
     playability_status: info?.playability_status?.status || '',
@@ -268,8 +303,8 @@ async function getInfo(body) {
 async function getPlaylist(body) {
   const playlistId = body.playlist_id || extractPlaylistId(body.url);
   if (!playlistId) throw new Error('Invalid YouTube playlist URL or ID');
-  const session = await getSession(body.cookie_file);
-  const playlist = await session.getPlaylist(playlistId);
+  const context = await getSession(body.cookie_file);
+  const playlist = await context.session.getPlaylist(playlistId);
   const items = playlist?.items || playlist?.videos || [];
   return {
     id: playlistId,
@@ -291,11 +326,11 @@ async function getPlaylist(body) {
 async function getDownloadPlan(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const session = await getSession(body.cookie_file);
+  const context = await getSession(body.cookie_file);
   const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
 
   if (!body.video) {
-    const { format: audio, client } = await resolveFormat(session, videoId, requestedClient, {
+    const { format: audio, client } = await resolveFormat(context, videoId, requestedClient, {
       type: 'audio', quality: 'best', format: 'any'
     });
     return {
@@ -307,22 +342,22 @@ async function getDownloadPlan(body) {
 
   let videoResult;
   try {
-    videoResult = await resolveFormat(session, videoId, requestedClient, {
+    videoResult = await resolveFormat(context, videoId, requestedClient, {
       type: 'video', quality: 'best', format: 'mp4'
     });
   } catch {
-    videoResult = await resolveFormat(session, videoId, requestedClient, {
+    videoResult = await resolveFormat(context, videoId, requestedClient, {
       type: 'video', quality: 'best', format: 'any'
     });
   }
 
   let audioResult;
   try {
-    audioResult = await resolveFormat(session, videoId, requestedClient, {
+    audioResult = await resolveFormat(context, videoId, requestedClient, {
       type: 'audio', quality: 'best', format: 'mp4'
     });
   } catch {
-    audioResult = await resolveFormat(session, videoId, requestedClient, {
+    audioResult = await resolveFormat(context, videoId, requestedClient, {
       type: 'audio', quality: 'best', format: 'any'
     });
   }
