@@ -141,6 +141,7 @@ recreate_bot_containers() {
             if [ -f "$d/config.json" ]; then
                 tmp_config=$(mktemp)
                 jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$d/config.json" > "$tmp_config" && mv "$tmp_config" "$d/config.json"
+                chown 1000:1000 "$d/config.json"
             fi
             
             docker create \
@@ -1361,6 +1362,7 @@ update_all_cookies() {
             cp "$new_cookies_path" "$bot_dir/cookies.txt"
             tmp_config=$(mktemp)
             jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$bot_dir/config.json" > "$tmp_config" && mv "$tmp_config" "$bot_dir/config.json"
+            chown 1000:1000 "$bot_dir/config.json"
             
             # Ensure permissions
             chown 1000:1000 "$bot_dir/cookies.txt"

@@ -62,6 +62,7 @@ recreate_bot_containers() {
             if [ -f "$d/config.json" ]; then
                 tmp_config=$(mktemp)
                 jq '.services.yt.cookiefile_path = "data/cookies.txt"' "$d/config.json" > "$tmp_config" && mv "$tmp_config" "$d/config.json"
+                chown 1000:1000 "$d/config.json"
             fi
             
             docker create \
