@@ -4,6 +4,37 @@ All notable updates to this fork are documented here, in reverse chronological o
 
 ---
 
+## 🆕 v2.6.0 — "YouTube.js Bridge Architecture & Native Stream Resolution" *(08/29/2026)*
+
+### 🚀 YouTube.js Bridge Architecture (Goodbye `yt-dlp` & `py-yt-search`)
+- **⚡ Persistent Node.js Bridge (`youtube_bridge`):**
+  Replaced `yt-dlp` stream extraction with a dedicated, persistent HTTP bridge powered by `YouTube.js` (`youtubei.js`). This eliminates external subprocess overhead, decreases latency, and enables native YouTube stream extraction directly compatible with `mpv`.
+- **🔍 Native YouTube Search:**
+  Migrated YouTube searches from `py-yt-search` directly to the `YouTube.js` bridge. Removed `py-yt-search` and `yt-dlp` from Python dependencies (`requirements.txt`).
+- **🛡️ MPV Compatibility & Client Isolation:**
+  Configured client separation (`YTMUSIC` and `WEB`) within the bridge for optimal stream extraction while keeping `ytmusicapi` responsible for rich catalog discovery and personalized autoplay.
+
+### ⏱️ Session Pre-Warming & Startup Acceleration
+- **🔥 Handshake Warmup:**
+  Implemented automatic session pre-warming during bot startup (`_pre_warm()`). Initializes the Innertube session and warms stream resolution before accepting user commands, eliminating initial search and play latency.
+- **🔒 Dedicated Web Session Isolation:**
+  Ensured persistent search and stream sessions are properly isolated per bot instance to avoid session cross-contamination.
+
+### 🌐 Multi-Instance Dynamic Port Isolation
+- **🔀 Seed-Based Port Allocation:**
+  Added automatic dynamic port offset calculations in `entrypoint.sh` based on container hostname or `TTBOT_INSTANCE` (`PORT_BASE`, `POT_PROVIDER_PORT`, `YOUTUBE_BRIDGE_PORT`).
+  Eliminates port binding collisions when running multiple bot instances on host networking mode.
+- **🍪 Isolated Cookie Sessions:**
+  Improved cookie parser to isolate Netscape `cookies.txt` sessions per instance and prefer latest duplicate cookie entries with support for spaced cookie configuration.
+
+### 📦 System Dependencies & Build Modernization
+- **🎥 FFmpeg Core Requirement:**
+  Added `ffmpeg` as a standard system dependency across all Linux package managers in `install.sh` and `Dockerfile`.
+- **📦 Layered Dependency Caching:**
+  Modernized Docker build caching by isolating `youtube_bridge/package.json` and running `npm install --omit=dev` in a dedicated cache layer.
+
+---
+
 ## 🆕 v2.5.2 — "Dedicated Uninstaller & Legal Protection" *(08/17/2026)*
 
 ### 🛡️ Dedicated Uninstaller Submenu (`uninstall.sh`)

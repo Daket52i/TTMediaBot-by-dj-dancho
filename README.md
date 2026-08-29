@@ -17,10 +17,12 @@ This fork includes several modifications and optimizations:
 
 - **Removed Services:** Yandex Music and VK integration have been removed
 - **TeamTalk SDK Upgrade:** Updated to TeamTalk SDK 5.8.1 for improved performance
+- **YouTube.js Bridge Architecture:** Replaced `yt-dlp` and `py-yt-search` with a dedicated, persistent `YouTube.js` (`youtubei.js`) microservice bridge. Features session pre-warming on startup for instantaneous search and stream resolution with zero CLI bottlenecks.
+- **Multi-Instance Port Isolation:** Intelligent per-instance port allocation (`PORT_BASE`, `POT_PROVIDER_PORT`, `YOUTUBE_BRIDGE_PORT`) dynamically isolates backend bridges across multiple bot containers running concurrently.
 - **ARM64 Architecture Support:** Added native support for ARM64 architecture (such as Raspberry Pi and AWS Graviton servers) with automatic platform detection and library downloads during installation.
   > [!NOTE]
   > On `x86_64` systems, the installation remains untouched and minimal. On `ARM` systems, the installer and Dockerfile conditionally install additional dependencies (such as `libportaudio2`) required by the ARM version of the TeamTalk SDK to run.
-- **Universal Linux Distribution Support:** The installer (`ttbotdocker.sh` / `install_git_clone.sh`) now dynamically supports automatically setting up Docker and dependencies on any major distribution (Ubuntu, Debian, CentOS, RHEL, Fedora, Rocky Linux, AlmaLinux, Raspbian, Arch, etc.) using the official universal installer and dynamic package manager fallbacks for `jq`.
+- **Universal Linux Distribution Support:** The installer (`ttbotdocker.sh` / `install_git_clone.sh`) now dynamically supports automatically setting up Docker, `ffmpeg`, and dependencies on any major distribution (Ubuntu, Debian, CentOS, RHEL, Fedora, Rocky Linux, AlmaLinux, Raspbian, Arch, etc.) using the official universal installer and dynamic package manager fallbacks for `jq`.
 - **Docker Containerization:** The bot runs in Docker containers based on Debian 11 and Python 3.10, ensuring compatibility with legacy dependencies while maintaining stability
 - **Proven Stability:** Since I first encountered this bot in 2021, the adaptations made to work around YouTube's restrictions, combined with the optimizations from 2021/2022, have proven to be excellent and reliable
 
@@ -36,12 +38,12 @@ To view the complete history of updates, including all new features, bug fixes, 
 This fork includes optimized support for **YouTube Music** alongside regular YouTube:
 
 
-- **YouTube Search API Integration:** Uses the YouTube Search API for fast and reliable music discovery
+- **YouTube.js Bridge Integration:** High-performance persistent `YouTube.js` (`youtubei.js`) bridge for fast YouTube search and direct audio stream resolution
 - **Optimized Libraries:** 
-  - YouTube uses `py-yt-search` - a fast and modern Python library for YouTube searches
-  - YouTube Music uses `ytmusicapi` - the official YouTube Music API library
-  - Both services use a persistent `youtubei.js`/YouTube.js bridge for stream resolution; `ytmusicapi` remains responsible for YouTube Music search/autoplay
-- **Performance Focus:** Designed to run with minimal bottlenecks, ensuring smooth playback and quick search results
+  - YouTube search and streaming are powered by the native `YouTube.js` bridge
+  - YouTube Music uses `ytmusicapi` - the official YouTube Music API library for catalog searches and authenticated autoplay
+  - Both services resolve mpv-compatible playback streams directly through the persistent bridge
+- **Performance Focus & Warmup:** Built-in session pre-warming during bot startup ensures instantaneous response on initial search and track requests
 - **Unified Cookie System:** Both YouTube and YouTube Music use the same cookies configuration for authentication
 - **📦 Playlist & Album Downloads:** Full support for downloading entire collections via the `dlp` command with metadata-aware naming
 - **🕵️ Real-time PM Progress:** Stay updated on your downloads without cluttering the channel
