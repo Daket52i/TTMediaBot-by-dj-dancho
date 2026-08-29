@@ -71,7 +71,7 @@ async function netscapeCookiesToHeader(cookieFile) {
 }
 
 function pageConfigValue(page, key) {
-  const match = page.match(new RegExp(`"${key}":"([^"]+)"`));
+  const match = page.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`));
   if (!match) return undefined;
   try {
     return JSON.parse(`"${match[1]}"`);
