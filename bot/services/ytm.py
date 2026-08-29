@@ -251,7 +251,7 @@ class YtmService(_Service):
             if current_video_id:
                 should_fetch = False
                 try:
-                    if self.bot.player.track_list:
+                    if len(self.bot.player.track_list) == 1:
                         last_track = self.bot.player.track_list[-1]
                         last_info = last_track.extra_info or {}
                         last_video_id = last_info.get("videoId") or last_info.get("id")
@@ -346,13 +346,16 @@ class YtmService(_Service):
               
               if 'tracks' in watch_playlist:
                    new_tracks = []
-                   for t_info in watch_playlist['tracks'][1:]:
+                   seen_ids = {video_id}
+                   for t_info in watch_playlist['tracks']:
+                        v_id = t_info.get('videoId')
+                        if not v_id or v_id in seen_ids:
+                             continue
+                        seen_ids.add(v_id)
                         title = t_info['title']
                         if 'artists' in t_info:
                              artists = ", ".join([a['name'] for a in t_info['artists']])
                              title += f" - {artists}"
-                        
-                        v_id = t_info['videoId']
                         track = Track(
                              service=self.name,
                              name=title,
@@ -361,8 +364,13 @@ class YtmService(_Service):
                              extra_info=t_info
                         )
                         new_tracks.append(track)
+                        if len(new_tracks) == 5:
+                             break
                    
-                   if new_tracks:
+                   current_tracks = self.bot.player.track_list
+                   current_info = current_tracks[0].extra_info or {} if len(current_tracks) == 1 else {}
+                   current_id = current_info.get("videoId") or current_info.get("id")
+                   if new_tracks and current_id == video_id:
                         logging.info(f"[YTM] Adding {len(new_tracks)} autoplay tracks to queue")
                         self.bot.player.track_list.extend(new_tracks)
          except Exception as e:

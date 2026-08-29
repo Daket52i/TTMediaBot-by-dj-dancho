@@ -191,7 +191,7 @@ class YtService(_Service):
         if current_video_id:
             should_fetch = False
             try:
-                if self.bot.player.track_list:
+                if len(self.bot.player.track_list) == 1:
                     last_track = self.bot.player.track_list[-1]
                     last_info = last_track.extra_info or {}
                     last_video_id = last_info.get("id") or last_info.get("videoId")
@@ -361,7 +361,10 @@ class YtService(_Service):
     def _fetch_autoplay_sync(self, video_id: str) -> None:
          try:
               new_tracks = self._get_recommendations(video_id, limit=5)
-              if new_tracks:
+              current_tracks = self.bot.player.track_list
+              current_info = current_tracks[0].extra_info or {} if len(current_tracks) == 1 else {}
+              current_id = current_info.get("id") or current_info.get("videoId")
+              if new_tracks and current_id == video_id:
                    logging.info(f"[YT] Adding {len(new_tracks)} autoplay tracks to queue")
                    self.bot.player.track_list.extend(new_tracks)
          except Exception as e:

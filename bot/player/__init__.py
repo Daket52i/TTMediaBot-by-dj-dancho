@@ -46,6 +46,7 @@ class Player:
         self.state = State.Stopped
         self.mode = Mode.TrackList
         self.volume = self.config.default_volume
+        self._navigation_lock = threading.RLock()
 
         self.queue: QueueManager = QueueManager()
 
@@ -178,6 +179,10 @@ class Player:
         return True
 
     def next(self) -> None:
+        with self._navigation_lock:
+            self._next_locked()
+
+    def _next_locked(self) -> None:
         if not self.queue.is_empty:
             if self.play_from_queue():
                 return
@@ -186,11 +191,10 @@ class Player:
         if len(self.track_list) > 0:
             if self.mode == Mode.Random:
                 try:
-                    track_index = self._index_list[
-                        self._index_list.index(self.track_index) + 1
-                    ]
-                except IndexError:
-                    track_index = 0
+                    current_position = self._index_list.index(self.track_index)
+                    track_index = self._index_list[current_position + 1]
+                except (IndexError, ValueError, AttributeError):
+                    raise errors.NoNextTrackError()
             else:
                 track_index += 1
         else:
