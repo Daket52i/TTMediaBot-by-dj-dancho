@@ -36,6 +36,7 @@ cookies.txt
 *.log
 TTMediaBot.log
 TTMediaBotCache.dat
+fast_forensics.py
 *.mp3
 *.m4a
 *.webm
