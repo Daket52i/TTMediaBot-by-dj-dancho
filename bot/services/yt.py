@@ -65,6 +65,7 @@ class YtService(_Service):
                 try:
                     logging.info(f"YT Service pre-warming (attempt {attempt}/3)...")
                     self.search("test", limit=1)
+                    self._bridge.resolve(video_id="48Lrud3Bxpc")
                     self._is_warmed = True
                     logging.info("YT Service pre-warming finished successfully.")
                     return
