@@ -52,7 +52,7 @@ class YtService(_Service):
                 "YouTube may block requests requiring authentication."
             )
 
-        self._bridge = YouTubeBridge(self.config.cookiefile_path, client="MWEB")
+        self._bridge = YouTubeBridge(self.config.cookiefile_path, client="YTMUSIC")
 
         # Persistent event loop for faster async operations
         self._loop = asyncio.new_event_loop()
