@@ -6,13 +6,15 @@ import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
 from bot import errors
+
+logger = logging.getLogger(__name__)
 
 
 class YouTubeBridge:
@@ -22,7 +24,7 @@ class YouTubeBridge:
         self.client = client
         self.timeout = (5, 30)
 
-    def _post(self, endpoint: str, **payload: Any) -> Dict[str, Any]:
+    def _post(self, endpoint: str, **payload: Any) -> dict[str, Any]:
         payload.setdefault("cookie_file", self.cookie_file or None)
         payload.setdefault("client", self.client)
         try:
@@ -38,7 +40,7 @@ class YouTubeBridge:
             if getattr(exc, "response", None) is not None:
                 try:
                     detail = exc.response.json().get("error", "")
-                except Exception:
+                except ValueError:
                     detail = exc.response.text[:500]
             message = detail or str(exc)
             raise errors.ServiceError(f"YouTube.js bridge error: {message}") from exc
@@ -56,25 +58,25 @@ class YouTubeBridge:
         except requests.RequestException:
             return False
 
-    def resolve(self, url: str = "", video_id: str = "") -> Dict[str, Any]:
+    def resolve(self, url: str = "", video_id: str = "") -> dict[str, Any]:
         source_url = url or f"https://www.youtube.com/watch?v={video_id}"
         try:
             return self._post("/resolve", url=url or None, video_id=video_id or None)
         except errors.ServiceError as exc:
-            logging.warning("YouTube.js resolve failed; trying yt-dlp fallback: %s", exc)
+            logger.warning("YouTube.js resolve failed; trying yt-dlp fallback: %s", exc)
             return self._resolve_with_ytdlp(source_url)
 
-    def info(self, url: str = "", video_id: str = "") -> Dict[str, Any]:
+    def info(self, url: str = "", video_id: str = "") -> dict[str, Any]:
         return self._post("/info", url=url or None, video_id=video_id or None)
 
-    def playlist(self, url: str) -> Dict[str, Any]:
+    def playlist(self, url: str) -> dict[str, Any]:
         return self._post("/playlist", url=url)
 
     def download(self, url: str, file_path: str, video: bool = False) -> None:
         try:
             plan = self._post("/download-plan", url=url, video=video)
         except errors.ServiceError as exc:
-            logging.warning("YouTube.js download plan failed; trying yt-dlp fallback: %s", exc)
+            logger.warning("YouTube.js download plan failed; trying yt-dlp fallback: %s", exc)
             self._download_with_ytdlp(url, file_path, video)
             return
         headers = plan.get("http_headers") or {}
@@ -104,7 +106,7 @@ class YouTubeBridge:
                 file_path,
             ]
 
-        logging.info("YouTube.js download: starting ffmpeg")
+        logger.info("YouTube.js download: starting ffmpeg")
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as exc:
@@ -128,8 +130,8 @@ class YouTubeBridge:
             except FileNotFoundError:
                 pass
 
-    def _ydl_options(self, cookie_file: Optional[str]) -> Dict[str, Any]:
-        options: Dict[str, Any] = {
+    def _ydl_options(self, cookie_file: str | None) -> dict[str, Any]:
+        options: dict[str, Any] = {
             "format": "ba[ext=m4a]/ba[ext=webm]/ba/bestaudio/best",
             "format_sort": ["codec:opus", "codec:m4a", "codec:mp3"],
             "noplaylist": True,
@@ -149,11 +151,12 @@ class YouTubeBridge:
             options["cookiefile"] = cookie_file
         return options
 
-    def _resolve_with_ytdlp(self, url: str) -> Dict[str, Any]:
+    def _resolve_with_ytdlp(self, url: str) -> dict[str, Any]:
         try:
-            with self._cookie_copy() as cookie_file:
-                with YoutubeDL(self._ydl_options(cookie_file)) as ydl:
-                    info = ydl.extract_info(url, download=False)
+            with self._cookie_copy() as cookie_file, YoutubeDL(
+                self._ydl_options(cookie_file)
+            ) as ydl:
+                info = ydl.extract_info(url, download=False)
         except DownloadError as exc:
             raise errors.ServiceError(f"yt-dlp fallback error: {exc}") from exc
 

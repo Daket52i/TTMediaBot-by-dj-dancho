@@ -5,7 +5,6 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
-
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
