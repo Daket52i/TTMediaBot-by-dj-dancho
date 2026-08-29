@@ -48,10 +48,19 @@ class YouTubeBridge:
 
     def health(self) -> bool:
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=(2, 5))
+            response = requests.get(f"{self.base_url}/health", timeout=(1, 2))
             return response.ok
         except requests.RequestException:
             return False
+
+    def wait_ready(self, timeout: float = 5.0) -> bool:
+        import time
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            if self.health():
+                return True
+            time.sleep(0.05)
+        return self.health()
 
     def resolve(self, url: str = "", video_id: str = "") -> dict[str, Any]:
         return self._post("/resolve", url=url or None, video_id=video_id or None)

@@ -429,4 +429,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[youtube-bridge] listening on http://${HOST}:${PORT}`);
+  // Background pre-warming for search session so first user request is instant
+  getSearchSession().catch((err) => {
+    console.warn('[youtube-bridge] Background search session warmup failed:', err?.message || err);
+  });
 });

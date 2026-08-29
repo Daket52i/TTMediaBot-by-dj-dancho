@@ -61,6 +61,7 @@ class YtService(_Service):
         with self._warm_lock:
             if self._is_warmed:
                 return
+            self._bridge.wait_ready(timeout=5.0)
             for attempt in range(1, 4):
                 try:
                     logging.info(f"YT Service pre-warming (attempt {attempt}/3)...")
@@ -71,8 +72,8 @@ class YtService(_Service):
                     return
                 except Exception as e:
                     if attempt < 3:
-                        logging.warning(f"YT Pre-warming attempt {attempt} failed: {e}. Retrying in 5 seconds...")
-                        time.sleep(5)
+                        logging.warning(f"YT Pre-warming attempt {attempt} failed: {e}. Retrying in 0.5 seconds...")
+                        time.sleep(0.5)
                     else:
                         logging.error(f"YT Pre-warming failed after 3 attempts: {e}")
 

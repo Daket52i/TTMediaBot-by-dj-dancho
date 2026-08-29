@@ -199,6 +199,7 @@ class YtmService(_Service):
         with self._warm_lock:
             if self._is_warmed:
                 return
+            self._bridge.wait_ready(timeout=5.0)
             for attempt in range(1, 4):
                 try:
                     logging.info(f"YTM Service pre-warming (attempt {attempt}/3)...")
@@ -208,8 +209,8 @@ class YtmService(_Service):
                     return
                 except Exception as e:
                     if attempt < 3:
-                        logging.warning(f"YTM Pre-warming attempt {attempt} failed: {e}. Retrying in 5 seconds...")
-                        time.sleep(5)
+                        logging.warning(f"YTM Pre-warming attempt {attempt} failed: {e}. Retrying in 0.5 seconds...")
+                        time.sleep(0.5)
                     else:
                         logging.error(f"YTM Pre-warming failed after 3 attempts: {e}")
 
