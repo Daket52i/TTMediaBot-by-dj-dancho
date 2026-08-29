@@ -54,12 +54,9 @@ class YtService(_Service):
         threading.Thread(target=self._pre_warm, daemon=True).start()
 
     def _pre_warm(self):
-        # Wait a few seconds for Docker network interface to fully settle
-        time.sleep(5)
         for attempt in range(1, 4):
             try:
                 logging.info(f"YT Service pre-warming (attempt {attempt}/3)...")
-                # Establish initial connection to YouTube
                 self.search("music")
                 logging.info("YT Service pre-warming finished successfully.")
                 return

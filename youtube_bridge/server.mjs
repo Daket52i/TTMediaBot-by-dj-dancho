@@ -327,9 +327,11 @@ async function searchVideos(body) {
   const query = String(body.query || '').trim();
   if (!query) throw new Error('Search query is required');
   const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 50);
+  const startedAt = performance.now();
   const context = await getSession(body.cookie_file);
   const search = await context.session.search(query, { type: 'video' });
   const videos = search?.videos || [];
+  console.log(`[youtube-bridge] searched "${query}" in ${Math.round(performance.now() - startedAt)}ms`);
   return {
     entries: videos.slice(0, limit).map((video) => ({
       id: video.id,

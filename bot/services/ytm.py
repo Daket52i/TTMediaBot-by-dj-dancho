@@ -1,7 +1,6 @@
 from __future__ import annotations
 import logging
 import time
-import asyncio
 import threading
 import os
 import json
@@ -184,10 +183,6 @@ class YtmService(_Service):
         # Explicit public instance for search/metadata (User Request: No cookies for search)
         self.ytmusic_public = YTMusic(requests_session=self.http2_session)
 
-        # Persistent event loop for safer async operations if needed
-        self._loop = asyncio.new_event_loop()
-        threading.Thread(target=self._loop.run_forever, daemon=True).start()
-
         # Connection Keep-Alive to prevent TCP/SSL handshake lag
         threading.Thread(target=self._connection_keeper, daemon=True).start()
 
@@ -197,12 +192,9 @@ class YtmService(_Service):
         threading.Thread(target=self._pre_warm, daemon=True).start()
 
     def _pre_warm(self):
-        # Wait a few seconds for Docker network interface to fully settle
-        time.sleep(5)
         for attempt in range(1, 4):
             try:
                 logging.info(f"YTM Service pre-warming (attempt {attempt}/3)...")
-                # Establish initial connection to YTM
                 self.ytmusic_public.search("music", filter="songs", limit=1)
                 logging.info("YTM Service pre-warming finished successfully.")
                 return
