@@ -1123,8 +1123,7 @@ class DownloadDirectCommand(Command):
                 )
                 return
 
-            for track in tracks:
-                self.module_manager.uploader.run(track, user)
+            self.module_manager.uploader.run(tracks[0], user)
         except Exception as e:
             self.ttclient.send_message(
                 self.translator.translate("Error: {}").format(str(e)),
@@ -1192,8 +1191,7 @@ class DownloadListCommand(Command):
                     )
                     continue
 
-                for track in tracks:
-                    self.module_manager.uploader.run(track, user)
+                self.module_manager.uploader.run(tracks[0], user)
             except Exception as e:
                 self.ttclient.send_message(
                     self.translator.translate("Error downloading {link}: {error}").format(
@@ -1232,14 +1230,14 @@ class DownloadListCommand(Command):
                     error_count += 1
                     continue
 
-                for track in tracks:
-                    try:
-                        if track.type == TrackType.Dynamic:
-                            track.url
-                        track.download(dest_dir)
-                    except Exception as download_err:
-                        logging.error(f"Local download failed for track {track.name}: {download_err}")
-                        error_count += 1
+                track = tracks[0]
+                try:
+                    if track.type == TrackType.Dynamic:
+                        track.url
+                    track.download(dest_dir)
+                except Exception as download_err:
+                    logging.error(f"Local download failed for track {track.name}: {download_err}")
+                    error_count += 1
             except Exception as e:
                 logging.error(f"Error processing link {link}: {e}")
                 error_count += 1
@@ -1268,7 +1266,7 @@ class DownloadListCommand(Command):
                 try:
                     resolved = self.module_manager.streamer.get(link, user.is_admin)
                     if resolved:
-                        tracks.extend(resolved)
+                        tracks.append(resolved[0])
                 except Exception as e:
                     logging.error(f"ADS ZIP: Failed to resolve {link}: {e}")
 
@@ -1298,7 +1296,7 @@ class DownloadListCommand(Command):
                 try:
                     resolved = self.module_manager.streamer.get(link, user.is_admin)
                     if resolved:
-                        tracks.extend(resolved)
+                        tracks.append(resolved[0])
                     else:
                         error_count += 1
                 except Exception as e:
@@ -1388,7 +1386,6 @@ class ToggleLocalDownloadCommand(Command):
             return self.translator.translate("Local download mode (adsc) enabled.")
         else:
             return self.translator.translate("Local download mode (adsc) disabled.")
-
 
 
 

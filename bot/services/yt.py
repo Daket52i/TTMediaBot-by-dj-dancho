@@ -129,7 +129,7 @@ class YtService(_Service):
                     info["webpage_url"] = f"https://www.youtube.com/watch?v={video_id}"
                 return [Track(service=self.name, url=info.get("webpage_url", url), extra_info=info, type=TrackType.Dynamic)]
 
-            if "list=" in url and "v=" not in url:
+            if "list=" in url:
                 playlist = self._bridge.playlist(url)
                 tracks: List[Track] = []
                 for entry in playlist.get("entries", []):
