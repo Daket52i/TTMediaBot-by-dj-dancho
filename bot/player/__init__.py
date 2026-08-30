@@ -60,6 +60,9 @@ class Player:
         self._playback_trace_counter = 0
         self._playback_trace: Dict[str, Any] = {}
         self._pending_playback_context: Dict[str, Any] = {}
+        self._prefetch_lock = threading.Lock()
+        self._prefetch_timer_lock = threading.Lock()
+        self._prefetch_timer: Optional[threading.Timer] = None
 
         self.queue: QueueManager = QueueManager()
 
@@ -83,6 +86,7 @@ class Player:
 
     def close(self) -> None:
         logging.debug("Closing player")
+        self._cancel_prefetch()
         if self.state != State.Stopped:
             self.stop()
         self._player.terminate()
@@ -120,6 +124,7 @@ class Player:
         self._player.pause = True
 
     def stop(self) -> None:
+        self._cancel_prefetch()
         self.state = State.Stopped
         self._player.stop()
         self.track_list = []
@@ -154,7 +159,22 @@ class Player:
         self._player.pause = False
         self._player.play(arg)
         self._log_playback_timing("mpv_play_submitted", trace)
-        threading.Timer(1.0, self._prefetch_next_track).start()
+        self._schedule_prefetch()
+
+    def _schedule_prefetch(self) -> None:
+        with self._prefetch_timer_lock:
+            if self._prefetch_timer is not None:
+                self._prefetch_timer.cancel()
+            timer = threading.Timer(1.0, self._prefetch_next_track)
+            timer.daemon = True
+            self._prefetch_timer = timer
+            timer.start()
+
+    def _cancel_prefetch(self) -> None:
+        with self._prefetch_timer_lock:
+            if self._prefetch_timer is not None:
+                self._prefetch_timer.cancel()
+                self._prefetch_timer = None
 
     def _start_playback_trace(self) -> Dict[str, Any]:
         with self._playback_trace_lock:
@@ -224,6 +244,9 @@ class Player:
                 self._index_list.extend(missing)
 
     def _prefetch_next_track(self) -> None:
+        if not self._prefetch_lock.acquire(blocking=False):
+            logging.info("[PlaybackTiming] next_track_prefetch_skipped reason=already_running")
+            return
         started_at = time.perf_counter()
         try:
             # Se há faixa na fila, ela será a próxima — prefetch dela
@@ -280,6 +303,8 @@ class Player:
                 "[PlaybackTiming] next_track_prefetch_failed "
                 f"elapsed_ms={elapsed_ms:.2f} error={e!r}"
             )
+        finally:
+            self._prefetch_lock.release()
 
     def play_from_queue(self, started_at: Optional[float] = None) -> bool:
         started_at = started_at or time.perf_counter()
