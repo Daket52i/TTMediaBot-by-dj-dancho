@@ -68,11 +68,17 @@ class Track:
 
     @property
     def url(self) -> str:
+        needs_fetch = (
+            self.type == TrackType.Dynamic
+            and not self._is_fetched
+            and not self._fetch_failed
+        )
+        if not needs_fetch:
+            return self._url
         started_at = time.perf_counter()
-        cache_hit = self._is_fetched or self.type != TrackType.Dynamic
         logging.info(
             "[PlaybackTiming] track_url_started "
-            f"track_id={id(self)} cache_hit={cache_hit} "
+            f"track_id={id(self)} cache_hit=False "
             f"service={self.service} track={self._name!r}"
         )
         with self._lock:
@@ -82,7 +88,7 @@ class Track:
         logging.info(
             "[PlaybackTiming] track_url_completed "
             f"elapsed_ms={elapsed_ms:.2f} track_id={id(self)} "
-            f"cache_hit={cache_hit} service={self.service} track={self._name!r}"
+            f"cache_hit=False service={self.service} track={self._name!r}"
         )
         return url
 
