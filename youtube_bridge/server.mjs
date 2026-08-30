@@ -15,6 +15,10 @@ Platform.shim.eval = async (data) => new Function(data.output)();
 
 let sessionCache = { key: null, context: null };
 let searchSessionPromise = null;
+const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000;
+const RESOLVE_CACHE_MAX_ENTRIES = 256;
+const resolveCache = new Map();
+const pendingResolutions = new Map();
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -304,10 +308,46 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
 }
 
 async function resolveTrack(body) {
+  const startedAt = performance.now();
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
-  const context = await getSession(body.cookie_file);
   const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
+  const cached = resolveCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    resolveCache.delete(cacheKey);
+    resolveCache.set(cacheKey, cached);
+    console.log(`[youtube-bridge] resolve cache hit ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${resolveCache.size}`);
+    return cached.payload;
+  }
+  if (cached) resolveCache.delete(cacheKey);
+  console.log(`[youtube-bridge] resolve cache miss ${videoId} client=${requestedClient} cache_entries=${resolveCache.size}`);
+
+  const pending = pendingResolutions.get(cacheKey);
+  if (pending) {
+    console.log(`[youtube-bridge] joining pending resolve ${videoId} client=${requestedClient} pending=${pendingResolutions.size}`);
+    return pending;
+  }
+
+  const resolution = resolveTrackUncached(body, videoId, requestedClient)
+    .then((payload) => {
+      resolveCache.set(cacheKey, {
+        payload,
+        expiresAt: Date.now() + RESOLVE_CACHE_TTL_MS
+      });
+      while (resolveCache.size > RESOLVE_CACHE_MAX_ENTRIES) {
+        resolveCache.delete(resolveCache.keys().next().value);
+      }
+      console.log(`[youtube-bridge] resolve completed ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${resolveCache.size}`);
+      return payload;
+    })
+    .finally(() => pendingResolutions.delete(cacheKey));
+  pendingResolutions.set(cacheKey, resolution);
+  return resolution;
+}
+
+async function resolveTrackUncached(body, videoId, requestedClient) {
+  const context = await getSession(body.cookie_file);
 
   const { info, format, client } = await resolveFormat(context, videoId, requestedClient, {
     type: 'audio',

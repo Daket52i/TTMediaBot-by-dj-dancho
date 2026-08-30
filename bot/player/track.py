@@ -68,9 +68,23 @@ class Track:
 
     @property
     def url(self) -> str:
+        started_at = time.perf_counter()
+        cache_hit = self._is_fetched or self.type != TrackType.Dynamic
+        logging.info(
+            "[PlaybackTiming] track_url_started "
+            f"track_id={id(self)} cache_hit={cache_hit} "
+            f"service={self.service} track={self._name!r}"
+        )
         with self._lock:
             self._fetch_stream_data()
-            return self._url
+            url = self._url
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logging.info(
+            "[PlaybackTiming] track_url_completed "
+            f"elapsed_ms={elapsed_ms:.2f} track_id={id(self)} "
+            f"cache_hit={cache_hit} service={self.service} track={self._name!r}"
+        )
+        return url
 
     @url.setter
     def url(self, value: str) -> None:

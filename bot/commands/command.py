@@ -30,7 +30,14 @@ class Command:
         return self.translator.translate("help text not found")
 
     def run_async(self, func: Callable[..., None], *args: Any, **kwargs: Any) -> None:
-        self._task_processor.task_queue.put(Task(id(self), func, args, kwargs))
+        task = Task(id(self), func, args, kwargs)
+        self._task_processor.task_queue.put(task)
+        function_name = getattr(func, "__qualname__", repr(func))
+        logging.info(
+            "[PlaybackTiming] task_queued "
+            f"function={function_name!r} "
+            f"pending_tasks={self._task_processor.task_queue.qsize()}"
+        )
 
     def search_tracks(self, query: str, limit: int | None = None) -> Any:
         service = self.service_manager.service
