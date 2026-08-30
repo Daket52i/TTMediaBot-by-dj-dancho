@@ -199,7 +199,7 @@ class YtService(_Service):
         track_type = TrackType.Live if resolved.get("is_live") else TrackType.Default
         current_video_id = resolved.get("id") or video_id
 
-        if current_video_id:
+        if current_video_id and not getattr(self.bot.player, "is_playlist", False):
             try:
                 remaining = len(self.bot.player.track_list) - 1 - self.bot.player.track_index
                 if remaining <= 4:

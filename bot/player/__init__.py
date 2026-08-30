@@ -46,6 +46,7 @@ class Player:
         self.state = State.Stopped
         self.mode = Mode.TrackList
         self.volume = self.config.default_volume
+        self.is_playlist: bool = False
         self._navigation_lock = threading.RLock()
 
         self.queue: QueueManager = QueueManager()
@@ -72,9 +73,14 @@ class Player:
         self,
         tracks: Optional[List[Track]] = None,
         start_track_index: Optional[int] = None,
+        is_playlist: Optional[bool] = None,
     ) -> None:
         if tracks != None:
             self.track_list = tracks
+            if is_playlist is not None:
+                self.is_playlist = is_playlist
+            else:
+                self.is_playlist = len(tracks) > 1
             if not start_track_index and self.mode == Mode.Random:
                 self.shuffle(True)
                 self.track_index = self._index_list[0]
@@ -98,6 +104,7 @@ class Player:
         self.track_list = []
         self.track = Track()
         self.track_index = -1
+        self.is_playlist = False
 
     def _play(self, arg: str, save_to_recents: bool = True) -> None:
         if save_to_recents:
@@ -208,7 +215,7 @@ class Player:
 
     def _check_and_trigger_autoplay(self) -> None:
         try:
-            if not self.track_list or self.mode == Mode.SingleTrack:
+            if not self.track_list or self.mode == Mode.SingleTrack or self.is_playlist:
                 return
             remaining = len(self.track_list) - 1 - self.track_index
             if remaining <= 4:
@@ -232,7 +239,7 @@ class Player:
 
     def _replenish_autoplay_sync(self) -> bool:
         try:
-            if not self.track_list or self.mode == Mode.SingleTrack:
+            if not self.track_list or self.mode == Mode.SingleTrack or self.is_playlist:
                 return False
             candidates = []
             if self.track:
@@ -271,9 +278,13 @@ class Player:
                     if current_position + 1 < len(self._index_list):
                         track_index = self._index_list[current_position + 1]
                     else:
+                        if self.is_playlist and self.mode != Mode.RepeatTrackList:
+                            raise errors.NoNextTrackError()
                         self.shuffle(True)
                         track_index = self._index_list[0] if self._index_list else 0
                 except (IndexError, ValueError, AttributeError):
+                    if self.is_playlist and self.mode != Mode.RepeatTrackList:
+                        raise errors.NoNextTrackError()
                     self.shuffle(True)
                     track_index = self._index_list[0] if self._index_list else 0
             else:
@@ -281,15 +292,21 @@ class Player:
         else:
             track_index = 0
 
-        if track_index >= len(self.track_list) and self.mode != Mode.RepeatTrackList:
-            self._replenish_autoplay_sync()
+        if track_index >= len(self.track_list):
+            if self.mode == Mode.RepeatTrackList:
+                self.play_by_index(0)
+                return
+            if not self.is_playlist:
+                self._replenish_autoplay_sync()
+            if track_index >= len(self.track_list):
+                raise errors.NoNextTrackError()
 
         try:
             self.play_by_index(track_index)
         except errors.IncorrectTrackIndexError:
             if self.mode == Mode.RepeatTrackList:
                 self.play_by_index(0)
-            elif self.mode == Mode.Random:
+            elif self.mode == Mode.Random and not self.is_playlist:
                 self.shuffle(True)
                 self.play_by_index(self._index_list[0] if self._index_list else 0)
             else:
