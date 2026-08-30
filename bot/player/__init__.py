@@ -117,13 +117,13 @@ class Player:
     def _play(self, arg: str, save_to_recents: bool = True) -> None:
         if save_to_recents:
             try:
-                if self.cache.recents[-1] != self.track_list[self.track_index]:
-                    self.cache.recents.append(
-                        self.track_list[self.track_index].get_raw()
-                    )
-            except:
-                self.cache.recents.append(self.track_list[self.track_index].get_raw())
-            self.cache_manager.save()
+                if 0 <= self.track_index < len(self.track_list):
+                    track_raw = self.track_list[self.track_index].get_raw()
+                    if not self.cache.recents or self.cache.recents[-1] != track_raw:
+                        self.cache.recents.append(track_raw)
+                        self.cache_manager.save()
+            except Exception as e:
+                logging.debug(f"[Player] Failed to save recents: {e}")
             
         # Apply headers dynamically if available in extra_info to prevent User-Agent/domain mismatches
         extra_info = getattr(self.track, "extra_info", None) or {}
@@ -351,7 +351,7 @@ class Player:
     def play_by_index(self, index: int) -> None:
         if index < len(self.track_list) and index >= (0 - len(self.track_list)):
             self.track = self.track_list[index]
-            self.track_index = self.track_list.index(self.track)
+            self.track_index = index if index >= 0 else len(self.track_list) + index
             try:
                 self._play(self.track.url)
                 self.state = State.Playing
