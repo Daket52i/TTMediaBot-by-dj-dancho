@@ -142,10 +142,13 @@ class Player:
 
             next_index = -1
             if self.mode == Mode.Random:
+                self._sync_index_list()
                 try:
                     current_pos = self._index_list.index(self.track_index)
                     if current_pos + 1 < len(self._index_list):
                         next_index = self._index_list[current_pos + 1]
+                    elif len(self._index_list) > 0:
+                        next_index = self._index_list[0]
                 except (ValueError, IndexError, AttributeError):
                     pass
             elif self.mode == Mode.RepeatTrack:
@@ -252,11 +255,17 @@ class Player:
         track_index = self.track_index
         if len(self.track_list) > 0:
             if self.mode == Mode.Random:
+                self._sync_index_list()
                 try:
                     current_position = self._index_list.index(self.track_index)
-                    track_index = self._index_list[current_position + 1]
+                    if current_position + 1 < len(self._index_list):
+                        track_index = self._index_list[current_position + 1]
+                    else:
+                        self.shuffle(True)
+                        track_index = self._index_list[0] if self._index_list else 0
                 except (IndexError, ValueError, AttributeError):
-                    raise errors.NoNextTrackError()
+                    self.shuffle(True)
+                    track_index = self._index_list[0] if self._index_list else 0
             else:
                 track_index += 1
         else:
@@ -270,6 +279,9 @@ class Player:
         except errors.IncorrectTrackIndexError:
             if self.mode == Mode.RepeatTrackList:
                 self.play_by_index(0)
+            elif self.mode == Mode.Random:
+                self.shuffle(True)
+                self.play_by_index(self._index_list[0] if self._index_list else 0)
             else:
                 raise errors.NoNextTrackError()
 
@@ -277,12 +289,15 @@ class Player:
         track_index = self.track_index
         if len(self.track_list) > 0:
             if self.mode == Mode.Random:
+                self._sync_index_list()
                 try:
-                    track_index = self._index_list[
-                        self._index_list.index(self.track_index) - 1
-                    ]
-                except IndexError:
-                    track_index = len(self.track_list) - 1
+                    current_position = self._index_list.index(self.track_index)
+                    if current_position > 0:
+                        track_index = self._index_list[current_position - 1]
+                    else:
+                        track_index = self._index_list[-1]
+                except (IndexError, ValueError, AttributeError):
+                    track_index = self.track_index
             else:
                 if track_index == 0 and self.mode != Mode.RepeatTrackList:
                     raise errors.NoPreviousTrackError
@@ -378,10 +393,21 @@ class Player:
 
     def shuffle(self, enable: bool) -> None:
         if enable:
-            self._index_list = [i for i in range(0, len(self.track_list))]
-            random.shuffle(self._index_list)
+            if not self.track_list:
+                self._index_list = []
+                return
+            indices = list(range(len(self.track_list)))
+            if self.track_index in indices:
+                indices.remove(self.track_index)
+                random.shuffle(indices)
+                self._index_list = [self.track_index] + indices
+            else:
+                random.shuffle(indices)
+                self._index_list = indices
+            logging.info(f"[Player] Shuffled playlist of {len(self.track_list)} tracks from first to last (Mode.Random active).")
         else:
-            del self._index_list
+            if hasattr(self, "_index_list"):
+                del self._index_list
 
     def register_event_callback(
         self, callback_name: str, callback_func: Callable[[mpv.MpvEvent], None]
