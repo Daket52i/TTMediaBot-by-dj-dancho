@@ -317,11 +317,24 @@ async function getInfo(body) {
   };
 }
 
+async function getWebSession(cookieFile) {
+  const cookie = await netscapeCookiesToHeader(cookieFile);
+  return await Innertube.create({
+    cookie: cookie || undefined,
+    user_agent: USER_AGENT,
+    client_type: ClientType.WEB,
+    cache: new UniversalCache(true),
+    enable_session_cache: true,
+    generate_session_locally: true,
+    retrieve_player: false
+  });
+}
+
 async function getPlaylist(body) {
   const playlistId = body.playlist_id || extractPlaylistId(body.url);
   if (!playlistId) throw new Error('Invalid YouTube playlist URL or ID');
-  const context = await getSession(body.cookie_file);
-  const playlist = await context.session.getPlaylist(playlistId);
+  const session = await getWebSession(body.cookie_file);
+  const playlist = await session.getPlaylist(playlistId);
   const allItems = [...(playlist?.items || playlist?.videos || [])];
 
   let current = playlist;
@@ -337,7 +350,7 @@ async function getPlaylist(body) {
     }
   }
 
-  console.log(`[youtube-bridge] playlist ${playlistId} fetched ${allItems.length} total items`);
+  console.log(`[youtube-bridge] playlist ${playlistId} fetched ${allItems.length} total items across all pages`);
 
   return {
     id: playlistId,
