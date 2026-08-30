@@ -209,18 +209,38 @@ class SeekForwardCommand(Command):
 class NextTrackCommand(Command):
     @property
     def help(self) -> str:
-        return self.translator.translate("Plays next track")
+        return self.translator.translate("[NUMBER] Plays next track or jumps to track number from the list")
 
     def __call__(self, arg: str, user: User) -> Optional[str]:
-        try:
-            self.player.next()
-            return self.translator.translate("Playing {}").format(
-                self.player.track.name
-            )
-        except errors.NoNextTrackError:
-            return self.translator.translate("No next track")
-        except errors.NothingIsPlayingError:
-            return self.translator.translate("Nothing is playing")
+        if arg:
+            try:
+                number = int(arg)
+                if number > 0:
+                    index = number - 1
+                elif number < 0:
+                    index = number
+                else:
+                    return self.translator.translate("Incorrect number")
+                self.player.play_by_index(index)
+                return self.translator.translate("Playing {} {}").format(
+                    arg, self.player.track.name
+                )
+            except errors.IncorrectTrackIndexError:
+                return self.translator.translate("Out of list")
+            except errors.NothingIsPlayingError:
+                return self.translator.translate("Nothing is playing")
+            except ValueError:
+                raise errors.InvalidArgumentError
+        else:
+            try:
+                self.player.next()
+                return self.translator.translate("Playing {}").format(
+                    self.player.track.name
+                )
+            except errors.NoNextTrackError:
+                return self.translator.translate("No next track")
+            except errors.NothingIsPlayingError:
+                return self.translator.translate("Nothing is playing")
 
 
 class PreviousTrackCommand(Command):
