@@ -25,10 +25,13 @@ class Player:
         self.cache = bot.cache
         self.cache_manager = bot.cache_manager
         mpv_options = {
-            "demuxer_lavf_o": "http_persistent=false",
-            "demuxer_max_back_bytes": 524288,
-            "demuxer_max_bytes": 262144,
-            "demuxer_readahead_secs": 2,
+            "cache": "yes",
+            "cache_secs": 120,
+            "demuxer_max_bytes": 67108864,
+            "demuxer_max_back_bytes": 33554432,
+            "demuxer_readahead_secs": 60,
+            "stream_buffer_size": 1048576,
+            "network_timeout": 30,
             "video": False,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
             "ytdl": False,
