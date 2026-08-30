@@ -59,6 +59,7 @@ class Player:
         self._playback_trace_lock = threading.Lock()
         self._playback_trace_counter = 0
         self._playback_trace: Dict[str, Any] = {}
+        self._pending_playback_context: Dict[str, Any] = {}
 
         self.queue: QueueManager = QueueManager()
 
@@ -92,6 +93,7 @@ class Player:
         tracks: Optional[List[Track]] = None,
         start_track_index: Optional[int] = None,
         is_playlist: Optional[bool] = None,
+        timing_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         if tracks != None:
             self.track_list = tracks
@@ -106,6 +108,7 @@ class Player:
             else:
                 self.track_index = start_track_index if start_track_index else 0
                 self.track = tracks[self.track_index]
+            self._pending_playback_context = timing_context or {}
             self._play(self.track.url)
         else:
             self._player.pause = False
@@ -156,11 +159,15 @@ class Player:
     def _start_playback_trace(self) -> Dict[str, Any]:
         with self._playback_trace_lock:
             self._playback_trace_counter += 1
+            timing_context = self._pending_playback_context
+            self._pending_playback_context = {}
             trace = {
                 "id": self._playback_trace_counter,
                 "started_at": time.perf_counter(),
                 "track": self.track.name or "Unknown",
                 "service": self.track.service or "unknown",
+                "timing_context": timing_context,
+                "summary_logged": False,
             }
             self._playback_trace = trace
         self._log_playback_timing("player_play_started", trace)
@@ -182,6 +189,22 @@ class Player:
             f"elapsed_ms={elapsed_ms:.2f} "
             f"service={current_trace['service']} "
             f"track={current_trace['track']!r}"
+        )
+        if stage == "playback-restart":
+            self._log_playback_total(current_trace)
+
+    def _log_playback_total(self, trace: Dict[str, Any]) -> None:
+        context = trace["timing_context"]
+        if not context or trace["summary_logged"]:
+            return
+        trace["summary_logged"] = True
+        total_ms = (time.perf_counter() - context["started_at"]) * 1000
+        kind = context["kind"]
+        details = f"query={context['query']!r} " if kind == "search" else ""
+        logging.info(
+            f"[PlaybackTiming] {kind}_to_playback_completed "
+            f"total_ms={total_ms:.2f} {details}"
+            f"service={trace['service']} track={trace['track']!r}"
         )
 
     def _register_playback_timing_event(self, event_name: str) -> None:
@@ -268,6 +291,7 @@ class Player:
         self.track_list = [next_track]
         self.track_index = 0
         self.track = next_track
+        self._set_next_playback_context(started_at)
         self._play(next_track.url)
         self.state = State.Playing
         self._log_next_track_completed(started_at, "queue")
@@ -375,6 +399,7 @@ class Player:
 
         if track_index >= len(self.track_list):
             if self.mode == Mode.RepeatTrackList:
+                self._set_next_playback_context(started_at)
                 self.play_by_index(0)
                 self._log_next_track_completed(started_at, "repeat_track_list")
                 return
@@ -384,18 +409,27 @@ class Player:
                 raise errors.NoNextTrackError()
 
         try:
+            self._set_next_playback_context(started_at)
             self.play_by_index(track_index)
             self._log_next_track_completed(started_at, "track_list")
         except errors.IncorrectTrackIndexError:
             if self.mode == Mode.RepeatTrackList:
+                self._set_next_playback_context(started_at)
                 self.play_by_index(0)
                 self._log_next_track_completed(started_at, "repeat_track_list")
             elif self.mode == Mode.Random and not self.is_playlist:
                 self.shuffle(True)
+                self._set_next_playback_context(started_at)
                 self.play_by_index(self._index_list[0] if self._index_list else 0)
                 self._log_next_track_completed(started_at, "random")
             else:
                 raise errors.NoNextTrackError()
+
+    def _set_next_playback_context(self, started_at: float) -> None:
+        self._pending_playback_context = {
+            "kind": "next_track",
+            "started_at": started_at,
+        }
 
     def _log_next_track_completed(self, started_at: float, source: str) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000

@@ -35,6 +35,8 @@ class Command:
     def search_tracks(self, query: str, limit: int | None = None) -> Any:
         service = self.service_manager.service
         started_at = time.perf_counter()
+        self._last_search_started_at = started_at
+        self._last_search_query = query
         logging.info(
             "[PlaybackTiming] search_started "
             f"service={service.name} query={query!r} limit={limit!r}"

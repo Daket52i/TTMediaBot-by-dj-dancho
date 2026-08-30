@@ -68,7 +68,15 @@ class PlayPauseCommand(Command):
                         ).format(nickname=user.nickname, request=arg),
                         type=2,
                     )
-                self.run_async(self.player.play, track_list)
+                self.run_async(
+                    self.player.play,
+                    track_list,
+                    timing_context={
+                        "kind": "search",
+                        "started_at": self._last_search_started_at,
+                        "query": self._last_search_query,
+                    },
+                )
                 return self.translator.translate("Playing {}").format(
                     track_list[0].name
                 )
@@ -824,7 +832,15 @@ class QueueAddCommand(Command):
 
         # Se nada está tocando, inicia imediatamente
         if self.player.state == State.Stopped:
-            self.run_async(self.player.play, [track])
+            self.run_async(
+                self.player.play,
+                [track],
+                timing_context={
+                    "kind": "search",
+                    "started_at": self._last_search_started_at,
+                    "query": self._last_search_query,
+                },
+            )
             return self.translator.translate("Playing {}").format(track.name)
 
         # Caso contrário, enfileira
@@ -1445,5 +1461,4 @@ class ToggleLocalDownloadCommand(Command):
             return self.translator.translate("Local download mode (adsc) enabled.")
         else:
             return self.translator.translate("Local download mode (adsc) disabled.")
-
 
