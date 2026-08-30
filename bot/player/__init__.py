@@ -185,10 +185,10 @@ class Player:
         vid = info.get("videoId") or info.get("id") or info.get("contentId")
         if vid:
             return str(vid)
-        url = getattr(track, "_url", "") or getattr(track, "url", "")
+        url = getattr(track, "_url", "")
         if url:
             if "v=" in url:
-                return url.split("v=")[1].split("&")[0]
+                return url.split("v=")[1].split("&")[0].split("?")[0]
             elif "youtu.be" in url:
                 return url.split("/")[-1].split("?")[0]
         return None
@@ -199,13 +199,21 @@ class Player:
                 return
             remaining = len(self.track_list) - 1 - self.track_index
             if remaining <= 4:
-                target_track = self.track_list[-1] if self.track_list else self.track
-                target_id = self._get_track_video_id(target_track) or self._get_track_video_id(self.track)
-                if target_id:
-                    service_name = getattr(target_track, "service", None) or self.bot.service_manager.service.name
-                    service = self.bot.service_manager.get_service_by_name(service_name)
-                    if hasattr(service, "_fetch_autoplay_async"):
-                        service._fetch_autoplay_async(target_id)
+                candidates = []
+                if self.track:
+                    candidates.append(self.track)
+                for t in reversed(self.track_list):
+                    if t not in candidates:
+                        candidates.append(t)
+
+                for cand in candidates:
+                    target_id = self._get_track_video_id(cand)
+                    if target_id:
+                        service_name = getattr(cand, "service", None) or self.bot.service_manager.service.name
+                        service = self.bot.service_manager.get_service_by_name(service_name)
+                        if hasattr(service, "_fetch_autoplay_async"):
+                            service._fetch_autoplay_async(target_id)
+                            break
         except Exception as e:
             logging.debug(f"[Player] Autoplay check trigger error: {e}")
 
@@ -213,14 +221,21 @@ class Player:
         try:
             if not self.track_list or self.mode == Mode.SingleTrack:
                 return False
-            target_track = self.track_list[-1] if self.track_list else self.track
-            target_id = self._get_track_video_id(target_track) or self._get_track_video_id(self.track)
-            if target_id:
-                service_name = getattr(target_track, "service", None) or self.bot.service_manager.service.name
-                service = self.bot.service_manager.get_service_by_name(service_name)
-                if hasattr(service, "_fetch_autoplay_sync"):
-                    service._fetch_autoplay_sync(target_id)
-                    return True
+            candidates = []
+            if self.track:
+                candidates.append(self.track)
+            for t in reversed(self.track_list):
+                if t not in candidates:
+                    candidates.append(t)
+
+            for cand in candidates:
+                target_id = self._get_track_video_id(cand)
+                if target_id:
+                    service_name = getattr(cand, "service", None) or self.bot.service_manager.service.name
+                    service = self.bot.service_manager.get_service_by_name(service_name)
+                    if hasattr(service, "_fetch_autoplay_sync"):
+                        if service._fetch_autoplay_sync(target_id):
+                            return True
         except Exception as e:
             logging.warning(f"[Player] Sync autoplay replenishment error: {e}")
         return False
@@ -248,7 +263,6 @@ class Player:
             track_index = 0
 
         if track_index >= len(self.track_list) and self.mode != Mode.RepeatTrackList:
-            # Tenta reabastecer a lista com novas recomendações sob demanda antes de desistir
             self._replenish_autoplay_sync()
 
         try:
@@ -288,9 +302,16 @@ class Player:
         if index < len(self.track_list) and index >= (0 - len(self.track_list)):
             self.track = self.track_list[index]
             self.track_index = self.track_list.index(self.track)
-            self._play(self.track.url)
-            self.state = State.Playing
-            self._check_and_trigger_autoplay()
+            try:
+                self._play(self.track.url)
+                self.state = State.Playing
+                self._check_and_trigger_autoplay()
+            except errors.ServiceError as e:
+                logging.warning(f"[Player] Track '{self.track.name}' is unplayable ({e}). Auto-skipping to next track...")
+                if self.mode != Mode.SingleTrack and len(self.track_list) > index + 1:
+                    self.next()
+                else:
+                    raise
         else:
             raise errors.IncorrectTrackIndexError()
 

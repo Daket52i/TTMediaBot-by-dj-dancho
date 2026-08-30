@@ -323,18 +323,20 @@ class YtmService(_Service):
     def _fetch_autoplay_async(self, video_id: str) -> None:
          threading.Thread(target=self._fetch_autoplay_sync, args=(video_id,), daemon=True, name=f"Autoplay_{video_id}").start()
 
-    def _fetch_autoplay_sync(self, video_id: str) -> None:
+    def _fetch_autoplay_sync(self, video_id: str) -> bool:
          try:
               logging.info(f"[YTM] Fetching continuous recommendations for {video_id}")
-              watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=20, radio=True)
+              watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=50, radio=True)
               tracks_data = watch_playlist.get("tracks", [])
               if not tracks_data:
-                  watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=20, radio=False)
+                  watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=50, radio=False)
                   tracks_data = watch_playlist.get("tracks", [])
               
               if tracks_data:
+                   current_idx = self.bot.player.track_index
+                   recent_tracks = self.bot.player.track_list[max(0, current_idx - 15):]
                    existing_ids = set()
-                   for t in self.bot.player.track_list:
+                   for t in recent_tracks:
                         t_info = getattr(t, "extra_info", None) or {}
                         vid = t_info.get("videoId") or t_info.get("id") or t_info.get("contentId")
                         if vid:
@@ -360,16 +362,18 @@ class YtmService(_Service):
                              extra_info=t_info
                         )
                         new_tracks.append(track)
-                        if len(new_tracks) >= 10:
+                        if len(new_tracks) >= 15:
                              break
                    
                    if new_tracks:
                         logging.info(f"[YTM] Adding {len(new_tracks)} continuous recommendations to track list (total: {len(self.bot.player.track_list) + len(new_tracks)})")
                         self.bot.player.track_list.extend(new_tracks)
+                        return True
                    else:
                         logging.info(f"[YTM] No new unique recommendations found for video_id {video_id}")
          except Exception as e:
               logging.error(f"[YTM] Autoplay fetch failed: {e}")
+         return False
 
     def search(self, query: str, limit: Optional[int] = None) -> List[Track]:
         if limit is None:
