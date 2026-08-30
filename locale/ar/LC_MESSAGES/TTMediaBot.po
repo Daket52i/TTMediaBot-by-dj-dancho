@@ -1046,3 +1046,9 @@ msgstr "غير معروف"
 #~ msgid "Not authorized to upload files to this channel"
 #~ msgstr "غير مصرح لك برفع الملفات إلى هذه القناة"
 
+
+msgid "Loading URL / playlist..."
+msgstr "جارٍ تحميل الرابط / قائمة التشغيل..."
+
+msgid "Loaded {count} tracks"
+msgstr "تم تحميل {count} مسار"

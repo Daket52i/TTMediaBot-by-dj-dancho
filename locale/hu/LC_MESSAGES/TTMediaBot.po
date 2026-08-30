@@ -1105,3 +1105,9 @@ msgstr "Ismeretlen"
 #~ "jelenít meg. Használd 'sr on' vagy "
 #~ "'sr off'. Mentés: 'sc'"
 
+
+msgid "Loading URL / playlist..."
+msgstr "URL / lejátszási lista betöltése..."
+
+msgid "Loaded {count} tracks"
+msgstr "{count} szám betöltve"

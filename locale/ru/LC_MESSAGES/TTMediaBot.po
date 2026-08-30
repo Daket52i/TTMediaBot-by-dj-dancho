@@ -1081,3 +1081,9 @@ msgstr "Неизвестно"
 #~ msgid "Not authorized to upload files to this channel"
 #~ msgstr "Нет прав для загрузки файлов в этот канал"
 
+
+msgid "Loading URL / playlist..."
+msgstr "Загрузка URL / плейлиста..."
+
+msgid "Loaded {count} tracks"
+msgstr "Загружено треков: {count}"

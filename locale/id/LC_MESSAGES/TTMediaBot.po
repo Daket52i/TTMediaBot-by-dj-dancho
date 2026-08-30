@@ -1086,3 +1086,9 @@ msgstr "Tidak Diketahui"
 #~ msgid "Not authorized to upload files to this channel"
 #~ msgstr "Tidak berwenang untuk mengunggah file ke saluran ini"
 
+
+msgid "Loading URL / playlist..."
+msgstr "Memuat URL / daftar putar..."
+
+msgid "Loaded {count} tracks"
+msgstr "{count} trek dimuat"

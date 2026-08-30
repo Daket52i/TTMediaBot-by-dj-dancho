@@ -1196,3 +1196,9 @@ msgstr "Desconhecido"
 #~ msgid "Not authorized to upload files to this channel"
 #~ msgstr "Não autorizado a enviar arquivos para este canal"
 
+
+msgid "Loading URL / playlist..."
+msgstr "Carregando URL / playlist..."
+
+msgid "Loaded {count} tracks"
+msgstr "{count} faixas carregadas"

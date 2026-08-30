@@ -1249,3 +1249,9 @@ msgstr "Bilinmiyor"
 #~ "'sr on' veya 'sr off' kullanın. "
 #~ "'sc' ile kalıcı kaydedin"
 
+
+msgid "Loading URL / playlist..."
+msgstr "URL / çalma listesi yükleniyor..."
+
+msgid "Loaded {count} tracks"
+msgstr "{count} parça yüklendi"
