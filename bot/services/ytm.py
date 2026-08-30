@@ -250,29 +250,12 @@ class YtmService(_Service):
 
             current_video_id = resolved.get("id") or video_id
             if current_video_id:
-                should_fetch = False
                 try:
-                    if len(self.bot.player.track_list) == 1:
-                        last_track = self.bot.player.track_list[-1]
-                        last_info = last_track.extra_info or {}
-                        last_video_id = last_info.get("videoId") or last_info.get("id")
-                        if not last_video_id and hasattr(last_track, "_url") and last_track._url:
-                            l_url = last_track._url
-                            if "v=" in l_url:
-                                last_video_id = l_url.split("v=")[1].split("&")[0]
-                            elif "youtu.be" in l_url:
-                                last_video_id = l_url.split("/")[-1]
-                        should_fetch = bool(last_video_id and last_video_id == current_video_id)
-                        if should_fetch:
-                            logging.info(f"[YTM] Autoplay trigger: Current track IS last track (ID match: {current_video_id})")
+                    remaining = len(self.bot.player.track_list) - 1 - self.bot.player.track_index
+                    if remaining <= 4:
+                        self._fetch_autoplay_async(current_video_id)
                 except Exception as e:
                     logging.debug(f"[YTM] Trace bot player state error: {e}")
-
-                if should_fetch:
-                    try:
-                        self.bot.loop.create_task(self._fetch_autoplay_async(current_video_id))
-                    except Exception:
-                        threading.Thread(target=self._fetch_autoplay_sync, args=(current_video_id,), daemon=True).start()
 
             duration = (time.perf_counter() - start_time) * 1000
             logging.info(f"YTM Get (Process/YouTube.js) finished in {duration:.2f}ms for {title}")
@@ -337,43 +320,54 @@ class YtmService(_Service):
              logging.info(f"YTM Get (Fallback) finished in {duration:.2f}ms for {url}")
              return [Track(service=self.name, url=url, type=TrackType.Dynamic)]
 
-    async def _fetch_autoplay_async(self, video_id: str) -> None:
-         self._fetch_autoplay_sync(video_id)
+    def _fetch_autoplay_async(self, video_id: str) -> None:
+         threading.Thread(target=self._fetch_autoplay_sync, args=(video_id,), daemon=True, name=f"Autoplay_{video_id}").start()
 
     def _fetch_autoplay_sync(self, video_id: str) -> None:
          try:
-              logging.info(f"[YTM] Fetching autoplay for {video_id}")
-              watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=5)
+              logging.info(f"[YTM] Fetching continuous recommendations for {video_id}")
+              watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=20, radio=True)
+              tracks_data = watch_playlist.get("tracks", [])
+              if not tracks_data:
+                  watch_playlist = (self.ytmusic or self.ytmusic_public).get_watch_playlist(videoId=video_id, limit=20, radio=False)
+                  tracks_data = watch_playlist.get("tracks", [])
               
-              if 'tracks' in watch_playlist:
+              if tracks_data:
+                   existing_ids = set()
+                   for t in self.bot.player.track_list:
+                        t_info = getattr(t, "extra_info", None) or {}
+                        vid = t_info.get("videoId") or t_info.get("id") or t_info.get("contentId")
+                        if vid:
+                             existing_ids.add(vid)
+                   existing_ids.add(video_id)
+
                    new_tracks = []
-                   seen_ids = {video_id}
-                   for t_info in watch_playlist['tracks']:
+                   for t_info in tracks_data:
                         v_id = t_info.get('videoId')
-                        if not v_id or v_id in seen_ids:
+                        if not v_id or v_id in existing_ids:
                              continue
-                        seen_ids.add(v_id)
-                        title = t_info['title']
-                        if 'artists' in t_info:
-                             artists = ", ".join([a['name'] for a in t_info['artists']])
-                             title += f" - {artists}"
+                        existing_ids.add(v_id)
+                        title = t_info.get('title', '')
+                        if 'artists' in t_info and isinstance(t_info['artists'], list):
+                             artists = ", ".join([a.get('name', '') for a in t_info['artists'] if isinstance(a, dict) and a.get('name')])
+                             if artists:
+                                  title += f" - {artists}"
                         track = Track(
                              service=self.name,
-                             name=title,
+                             name=title or "Unknown",
                              url=f"https://www.youtube.com/watch?v={v_id}",
                              type=TrackType.Dynamic,
                              extra_info=t_info
                         )
                         new_tracks.append(track)
-                        if len(new_tracks) == 5:
+                        if len(new_tracks) >= 10:
                              break
                    
-                   current_tracks = self.bot.player.track_list
-                   current_info = current_tracks[0].extra_info or {} if len(current_tracks) == 1 else {}
-                   current_id = current_info.get("videoId") or current_info.get("id")
-                   if new_tracks and current_id == video_id:
-                        logging.info(f"[YTM] Adding {len(new_tracks)} autoplay tracks to queue")
+                   if new_tracks:
+                        logging.info(f"[YTM] Adding {len(new_tracks)} continuous recommendations to track list (total: {len(self.bot.player.track_list) + len(new_tracks)})")
                         self.bot.player.track_list.extend(new_tracks)
+                   else:
+                        logging.info(f"[YTM] No new unique recommendations found for video_id {video_id}")
          except Exception as e:
               logging.error(f"[YTM] Autoplay fetch failed: {e}")
 

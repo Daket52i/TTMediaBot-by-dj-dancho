@@ -178,6 +178,53 @@ class Player:
         self.state = State.Playing
         return True
 
+    def _get_track_video_id(self, track: Optional[Track]) -> Optional[str]:
+        if not track:
+            return None
+        info = getattr(track, "extra_info", None) or {}
+        vid = info.get("videoId") or info.get("id") or info.get("contentId")
+        if vid:
+            return str(vid)
+        url = getattr(track, "_url", "") or getattr(track, "url", "")
+        if url:
+            if "v=" in url:
+                return url.split("v=")[1].split("&")[0]
+            elif "youtu.be" in url:
+                return url.split("/")[-1].split("?")[0]
+        return None
+
+    def _check_and_trigger_autoplay(self) -> None:
+        try:
+            if not self.track_list or self.mode == Mode.SingleTrack:
+                return
+            remaining = len(self.track_list) - 1 - self.track_index
+            if remaining <= 4:
+                target_track = self.track_list[-1] if self.track_list else self.track
+                target_id = self._get_track_video_id(target_track) or self._get_track_video_id(self.track)
+                if target_id:
+                    service_name = getattr(target_track, "service", None) or self.bot.service_manager.service.name
+                    service = self.bot.service_manager.get_service_by_name(service_name)
+                    if hasattr(service, "_fetch_autoplay_async"):
+                        service._fetch_autoplay_async(target_id)
+        except Exception as e:
+            logging.debug(f"[Player] Autoplay check trigger error: {e}")
+
+    def _replenish_autoplay_sync(self) -> bool:
+        try:
+            if not self.track_list or self.mode == Mode.SingleTrack:
+                return False
+            target_track = self.track_list[-1] if self.track_list else self.track
+            target_id = self._get_track_video_id(target_track) or self._get_track_video_id(self.track)
+            if target_id:
+                service_name = getattr(target_track, "service", None) or self.bot.service_manager.service.name
+                service = self.bot.service_manager.get_service_by_name(service_name)
+                if hasattr(service, "_fetch_autoplay_sync"):
+                    service._fetch_autoplay_sync(target_id)
+                    return True
+        except Exception as e:
+            logging.warning(f"[Player] Sync autoplay replenishment error: {e}")
+        return False
+
     def next(self) -> None:
         with self._navigation_lock:
             self._next_locked()
@@ -199,6 +246,11 @@ class Player:
                 track_index += 1
         else:
             track_index = 0
+
+        if track_index >= len(self.track_list) and self.mode != Mode.RepeatTrackList:
+            # Tenta reabastecer a lista com novas recomendações sob demanda antes de desistir
+            self._replenish_autoplay_sync()
+
         try:
             self.play_by_index(track_index)
         except errors.IncorrectTrackIndexError:
@@ -238,6 +290,7 @@ class Player:
             self.track_index = self.track_list.index(self.track)
             self._play(self.track.url)
             self.state = State.Playing
+            self._check_and_trigger_autoplay()
         else:
             raise errors.IncorrectTrackIndexError()
 
