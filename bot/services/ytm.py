@@ -437,7 +437,7 @@ class YtmService(_Service):
 
     def _connection_keeper(self):
         while True:
-            time.sleep(4)
+            time.sleep(60)
             try:
                 if self.ytmusic_public and hasattr(self.ytmusic_public, "_session"):
                      self.ytmusic_public._session.get("https://music.youtube.com/generate_204", timeout=5)

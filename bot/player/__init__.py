@@ -25,6 +25,10 @@ class Player:
         self.cache = bot.cache
         self.cache_manager = bot.cache_manager
         mpv_options = {
+            "ao": "pulse",
+            "audio_samplerate": 48000,
+            "audio_channels": "stereo",
+            "audio_format": "s16",
             "cache": "yes",
             "cache_secs": 120,
             "demuxer_max_bytes": 67108864,
