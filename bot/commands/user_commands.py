@@ -92,15 +92,30 @@ class PlayUrlCommand(Command):
 
     def __call__(self, arg: str, user: User) -> Optional[str]:
         if arg:
+            self.run_async(
+                self.ttclient.send_message,
+                self.translator.translate("Loading URL / playlist..."),
+                user,
+            )
             try:
                 tracks = self.module_manager.streamer.get(arg, user.is_admin)
+                if not tracks:
+                    return self.translator.translate("Nothing is found for your query")
                 if self.config.general.send_channel_messages:
                     self.run_async(
                         self.ttclient.send_message,
                         self.translator.translate(
-                            "{nickname} requested playing from a URL"
-                        ).format(nickname=user.nickname),
+                            "{nickname} requested playing from a URL ({count} tracks)"
+                        ).format(nickname=user.nickname, count=len(tracks)),
                         type=2,
+                    )
+                else:
+                    self.run_async(
+                        self.ttclient.send_message,
+                        self.translator.translate(
+                            "Loaded {count} tracks"
+                        ).format(count=len(tracks)),
+                        user,
                     )
                 self.run_async(self.player.play, tracks)
             except errors.IncorrectProtocolError:
