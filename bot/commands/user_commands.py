@@ -255,7 +255,7 @@ class ModeCommand(Command):
             try:
                 mode = Mode(arg.lower())
                 if mode == Mode.Random:
-                    self.player.shuffle(True)
+                    self.player.shuffle(True, preserve_current=True)
                 if self.player.mode == Mode.Random and mode != Mode.Random:
                     self.player.shuffle(False)
                 self.player.mode = Mode(mode)

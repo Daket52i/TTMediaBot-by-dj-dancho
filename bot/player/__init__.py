@@ -129,7 +129,7 @@ class Player:
     def _sync_index_list(self) -> None:
         if self.mode == Mode.Random:
             if not hasattr(self, "_index_list") or not self._index_list:
-                self.shuffle(True)
+                self.shuffle(True, preserve_current=True)
             elif len(self._index_list) < len(self.track_list):
                 existing = set(self._index_list)
                 missing = [i for i in range(len(self.track_list)) if i not in existing]
@@ -401,20 +401,20 @@ class Player:
     def set_output_device(self, id: str) -> None:
         self._player.audio_device = id
 
-    def shuffle(self, enable: bool) -> None:
+    def shuffle(self, enable: bool, preserve_current: bool = False) -> None:
         if enable:
             if not self.track_list:
                 self._index_list = []
                 return
             indices = list(range(len(self.track_list)))
-            if self.track_index in indices:
+            if preserve_current and self.track_index in indices:
                 indices.remove(self.track_index)
                 random.shuffle(indices)
                 self._index_list = [self.track_index] + indices
             else:
                 random.shuffle(indices)
                 self._index_list = indices
-            logging.info(f"[Player] Shuffled playlist of {len(self.track_list)} tracks from first to last (Mode.Random active).")
+            logging.info(f"[Player] Shuffled playlist of {len(self.track_list)} tracks 100% randomly (preserve_current={preserve_current}). First picked track index: {self._index_list[0] if self._index_list else None}")
         else:
             if hasattr(self, "_index_list"):
                 del self._index_list
