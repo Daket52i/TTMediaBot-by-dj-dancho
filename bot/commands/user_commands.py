@@ -209,10 +209,21 @@ class SeekForwardCommand(Command):
 class NextTrackCommand(Command):
     @property
     def help(self) -> str:
-        return self.translator.translate("[NUMBER] Plays next track or jumps to track number from the list")
+        return self.translator.translate("[NUMBER|?] Plays next track, jumps to track number, or shows current position with ?")
 
     def __call__(self, arg: str, user: User) -> Optional[str]:
         if arg:
+            if arg.strip() == "?":
+                if self.player.state != State.Stopped and self.player.track_list:
+                    current = self.player.track_index + 1
+                    total = len(self.player.track_list)
+                    return f"{current}/{total} - {self.player.track.name}"
+                elif self.player.state != State.Stopped:
+                    return self.translator.translate("Playing {}").format(
+                        self.player.track.name
+                    )
+                else:
+                    return self.translator.translate("Nothing is playing")
             try:
                 number = int(arg)
                 if number > 0:
@@ -386,11 +397,22 @@ class SelectTrackCommand(Command):
     @property
     def help(self) -> str:
         return self.translator.translate(
-            "NUMBER Selects track by number from the list of current results"
+            "[NUMBER|?] Selects track by number, or shows current position with ?"
         )
 
     def __call__(self, arg: str, user: User) -> Optional[str]:
         if arg:
+            if arg.strip() == "?":
+                if self.player.state != State.Stopped and self.player.track_list:
+                    current = self.player.track_index + 1
+                    total = len(self.player.track_list)
+                    return f"{current}/{total} - {self.player.track.name}"
+                elif self.player.state != State.Stopped:
+                    return self.translator.translate("Playing {}").format(
+                        self.player.track.name
+                    )
+                else:
+                    return self.translator.translate("Nothing is playing")
             try:
                 number = int(arg)
                 if number > 0:
@@ -410,7 +432,9 @@ class SelectTrackCommand(Command):
             except ValueError:
                 raise errors.InvalidArgumentError
         else:
-            if self.player.state != State.Stopped:
+            if self.player.state != State.Stopped and self.player.track_list:
+                return f"{self.player.track_index + 1}/{len(self.player.track_list)} - {self.player.track.name}"
+            elif self.player.state != State.Stopped:
                 return self.translator.translate("Playing {} {}").format(
                     self.player.track_index + 1, self.player.track.name
                 )
