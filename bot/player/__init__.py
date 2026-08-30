@@ -126,6 +126,16 @@ class Player:
         self._player.play(arg)
         threading.Timer(1.0, self._prefetch_next_track).start()
 
+    def _sync_index_list(self) -> None:
+        if self.mode == Mode.Random:
+            if not hasattr(self, "_index_list") or not self._index_list:
+                self.shuffle(True)
+            elif len(self._index_list) < len(self.track_list):
+                existing = set(self._index_list)
+                missing = [i for i in range(len(self.track_list)) if i not in existing]
+                random.shuffle(missing)
+                self._index_list.extend(missing)
+
     def _prefetch_next_track(self) -> None:
         try:
             # Se há faixa na fila, ela será a próxima — prefetch dela
