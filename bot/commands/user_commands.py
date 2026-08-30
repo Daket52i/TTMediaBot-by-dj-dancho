@@ -50,7 +50,7 @@ class PlayPauseCommand(Command):
                 # Search results mode: request more results from the service directly
                 if self.config.general.search_results_mode:
                     count = self.command_processor.search_results_count
-                    track_list = self.service_manager.service.search(arg, limit=count)
+                    track_list = self.search_tracks(arg, limit=count)
                     self.command_processor.pending_search_results[user.id] = track_list
                     lines = [self.translator.translate("Search results:")]
                     for i, track in enumerate(track_list):
@@ -59,7 +59,7 @@ class PlayPauseCommand(Command):
                     return "\n".join(lines)
 
                 # Normal mode: request only 1 result and play immediately
-                track_list = self.service_manager.service.search(arg)
+                track_list = self.search_tracks(arg)
                 if self.config.general.send_channel_messages:
                     self.run_async(
                         self.ttclient.send_message,
@@ -812,7 +812,7 @@ class QueueAddCommand(Command):
         )
 
         try:
-            track_list = self.service_manager.service.search(arg)
+            track_list = self.search_tracks(arg)
         except errors.NothingFoundError:
             return self.translator.translate("Nothing is found for your query")
         except errors.ServiceError:
@@ -1445,6 +1445,5 @@ class ToggleLocalDownloadCommand(Command):
             return self.translator.translate("Local download mode (adsc) enabled.")
         else:
             return self.translator.translate("Local download mode (adsc) disabled.")
-
 
 

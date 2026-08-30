@@ -201,6 +201,7 @@ class Player:
                 self._index_list.extend(missing)
 
     def _prefetch_next_track(self) -> None:
+        started_at = time.perf_counter()
         try:
             # Se há faixa na fila, ela será a próxima — prefetch dela
             next_from_queue = self.queue.peek_next()
@@ -208,7 +209,13 @@ class Player:
                 if not next_from_queue._is_fetched:
                     logging.info(f"Prefetching next track from queue: {next_from_queue.name}")
                     _ = next_from_queue.url
-                    logging.info(f"Prefetch from queue completed: {next_from_queue.name}")
+                    elapsed_ms = (time.perf_counter() - started_at) * 1000
+                    logging.info(
+                        "[PlaybackTiming] next_track_prefetch_completed "
+                        f"elapsed_ms={elapsed_ms:.2f} source=queue "
+                        f"service={next_from_queue.service} "
+                        f"track={next_from_queue.name!r}"
+                    )
                 return
 
             if not self.track_list:
@@ -238,11 +245,21 @@ class Player:
                 if not next_track._is_fetched:
                     logging.info(f"Prefetching next track: {next_track.name}")
                     _ = next_track.url
-                    logging.info(f"Prefetch completed for: {next_track.name}")
+                    elapsed_ms = (time.perf_counter() - started_at) * 1000
+                    logging.info(
+                        "[PlaybackTiming] next_track_prefetch_completed "
+                        f"elapsed_ms={elapsed_ms:.2f} source=track_list "
+                        f"service={next_track.service} track={next_track.name!r}"
+                    )
         except Exception as e:
-            logging.warning(f"Prefetch failed: {e}")
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            logging.warning(
+                "[PlaybackTiming] next_track_prefetch_failed "
+                f"elapsed_ms={elapsed_ms:.2f} error={e!r}"
+            )
 
-    def play_from_queue(self) -> bool:
+    def play_from_queue(self, started_at: Optional[float] = None) -> bool:
+        started_at = started_at or time.perf_counter()
         next_track = self.queue.pop_next()
         if next_track is None:
             return False
@@ -253,6 +270,7 @@ class Player:
         self.track = next_track
         self._play(next_track.url)
         self.state = State.Playing
+        self._log_next_track_completed(started_at, "queue")
         return True
 
     def _get_track_video_id(self, track: Optional[Track]) -> Optional[str]:
@@ -322,8 +340,14 @@ class Player:
             self._next_locked()
 
     def _next_locked(self) -> None:
+        started_at = time.perf_counter()
+        previous_track = self.track.name or "Unknown"
+        logging.info(
+            "[PlaybackTiming] next_track_started "
+            f"previous_track={previous_track!r} queue_size={self.queue.size}"
+        )
         if not self.queue.is_empty:
-            if self.play_from_queue():
+            if self.play_from_queue(started_at):
                 return
 
         track_index = self.track_index
@@ -352,6 +376,7 @@ class Player:
         if track_index >= len(self.track_list):
             if self.mode == Mode.RepeatTrackList:
                 self.play_by_index(0)
+                self._log_next_track_completed(started_at, "repeat_track_list")
                 return
             if not self.is_playlist:
                 self._replenish_autoplay_sync()
@@ -360,14 +385,25 @@ class Player:
 
         try:
             self.play_by_index(track_index)
+            self._log_next_track_completed(started_at, "track_list")
         except errors.IncorrectTrackIndexError:
             if self.mode == Mode.RepeatTrackList:
                 self.play_by_index(0)
+                self._log_next_track_completed(started_at, "repeat_track_list")
             elif self.mode == Mode.Random and not self.is_playlist:
                 self.shuffle(True)
                 self.play_by_index(self._index_list[0] if self._index_list else 0)
+                self._log_next_track_completed(started_at, "random")
             else:
                 raise errors.NoNextTrackError()
+
+    def _log_next_track_completed(self, started_at: float, source: str) -> None:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logging.info(
+            "[PlaybackTiming] next_track_submitted "
+            f"elapsed_ms={elapsed_ms:.2f} source={source} "
+            f"service={self.track.service} track={self.track.name!r}"
+        )
 
     def previous(self) -> None:
         track_index = self.track_index
