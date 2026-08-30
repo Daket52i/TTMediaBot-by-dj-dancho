@@ -23,7 +23,7 @@ class YtService(_Service):
         self.bot = bot
         self.config = config
         self.name = "yt"
-        self.hostnames = []
+        self.hostnames = ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"]
         self.is_enabled = self.config.enabled
         self.error_message = ""
         self.warning_message = ""
@@ -131,7 +131,16 @@ class YtService(_Service):
                     info["webpage_url"] = f"https://www.youtube.com/watch?v={video_id}"
                 return [Track(service=self.name, url=info.get("webpage_url", url), extra_info=info, type=TrackType.Dynamic)]
 
-            if "list=" in url:
+            lower_url = url.lower() if url else ""
+            if (
+                "list=" in lower_url
+                or "/channel/" in lower_url
+                or "/@" in lower_url
+                or "/c/" in lower_url
+                or "/user/" in lower_url
+                or "/playlist" in lower_url
+                or (url and url.startswith("UC"))
+            ):
                 playlist = self._bridge.playlist(url)
                 tracks: List[Track] = []
                 for entry in playlist.get("entries", []):
@@ -147,7 +156,7 @@ class YtService(_Service):
                         )
                     )
                 duration = (time.perf_counter() - start_time) * 1000
-                logging.info(f"YT Get (Playlist) finished in {duration:.2f}ms for {url}")
+                logging.info(f"YT Get (Playlist/Channel) finished in {duration:.2f}ms for {url}")
                 return tracks
 
             info = self._bridge.info(url=url)

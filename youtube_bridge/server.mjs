@@ -173,14 +173,39 @@ function extractVideoId(input) {
   return null;
 }
 
-function extractPlaylistId(input) {
+async function extractPlaylistId(input, session) {
   if (!input) return null;
+  if (/^[A-Za-z0-9_-]{18,50}$/.test(input)) {
+    if (input.startsWith('UC') && input.length === 24) {
+      return 'UU' + input.slice(2);
+    }
+    return input;
+  }
   try {
     const url = new URL(input);
-    return url.searchParams.get('list');
-  } catch {
-    return null;
-  }
+    const listParam = url.searchParams.get('list');
+    if (listParam) return listParam;
+
+    const channelMatch = url.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
+    if (channelMatch) {
+      return 'UU' + channelMatch[1].slice(2);
+    }
+
+    if (session && (url.pathname.includes('@') || url.pathname.includes('/c/') || url.pathname.includes('/user/') || url.pathname.includes('/channel/'))) {
+      try {
+        const res = await session.resolveURL(input);
+        const browseId = res?.payload?.browseId || res?.endpoint?.payload?.browseId;
+        if (browseId && browseId.startsWith('UC')) {
+          return 'UU' + browseId.slice(2);
+        } else if (browseId) {
+          return browseId;
+        }
+      } catch (e) {
+        console.warn(`[youtube-bridge] resolveURL failed for ${input}: ${e.message}`);
+      }
+    }
+  } catch {}
+  return null;
 }
 
 function textValue(value) {
@@ -331,9 +356,9 @@ async function getWebSession(cookieFile) {
 }
 
 async function getPlaylist(body) {
-  const playlistId = body.playlist_id || extractPlaylistId(body.url);
-  if (!playlistId) throw new Error('Invalid YouTube playlist URL or ID');
   const session = await getWebSession(body.cookie_file);
+  const playlistId = body.playlist_id || (await extractPlaylistId(body.url, session));
+  if (!playlistId) throw new Error('Invalid YouTube playlist URL or ID');
   const playlist = await session.getPlaylist(playlistId);
   const allItems = [...(playlist?.items || playlist?.videos || [])];
 
@@ -352,20 +377,29 @@ async function getPlaylist(body) {
 
   console.log(`[youtube-bridge] playlist ${playlistId} fetched ${allItems.length} total items across all pages`);
 
+  const defaultUploader = textValue(playlist?.info?.author?.name) || textValue(playlist?.info?.title) || '';
+
   return {
     id: playlistId,
     title: textValue(playlist?.info?.title),
-    uploader: textValue(playlist?.info?.author?.name),
+    uploader: defaultUploader,
     entries: allItems.map((item) => {
-      const id = item.id || item.video_id || item.content_id;
+      let id = item.id || item.video_id || item.content_id;
+      if (!id || id.length !== 11) {
+        const str = JSON.stringify(item);
+        const match = str.match(/"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"/);
+        if (match) id = match[1];
+      }
+      const title = textValue(item.title?.text || item.title || item.metadata?.title?.text || item.metadata?.title);
+      const uploader = textValue(item.author?.name || item.author?.text || item.author || item.metadata?.author?.name || item.short_by_line_text) || defaultUploader;
       return {
         id,
         videoId: id,
-        title: textValue(item.title) || textValue(item.metadata?.title),
-        uploader: textValue(item.author?.name) || textValue(item.metadata?.author?.name) || textValue(item.short_by_line_text?.toString?.()),
+        title,
+        uploader,
         webpage_url: id ? `https://www.youtube.com/watch?v=${id}` : ''
       };
-    }).filter((item) => item.id)
+    }).filter((item) => item.id && item.id.length === 11)
   };
 }
 

@@ -53,7 +53,7 @@ class YtmService(_Service):
         self.bot = bot
         self.config = config
         self.name = "ytm"
-        self.hostnames = []
+        self.hostnames = ["music.youtube.com", "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"]
         self.is_enabled = self.config.enabled
         self.error_message = ""
         self.warning_message = ""
@@ -277,6 +277,34 @@ class YtmService(_Service):
              t_vid = extra_info.get("videoId") or extra_info.get("id")
              t_url = f"https://www.youtube.com/watch?v={t_vid}" if t_vid else ""
              return [Track(service=self.name, url=t_url, name=t_title, type=TrackType.Dynamic, extra_info=extra_info)]
+
+        lower_url = url.lower() if url else ""
+        if (
+            "list=" in lower_url
+            or "/channel/" in lower_url
+            or "/@" in lower_url
+            or "/c/" in lower_url
+            or "/user/" in lower_url
+            or "/playlist" in lower_url
+            or (url and url.startswith("UC"))
+        ):
+            playlist = self._bridge.playlist(url)
+            tracks: List[Track] = []
+            for entry in playlist.get("entries", []):
+                entry["playlist_title"] = playlist.get("title")
+                entry["playlist_uploader"] = playlist.get("uploader")
+                tracks.append(
+                    Track(
+                        service=self.name,
+                        url=entry.get("webpage_url", ""),
+                        name=entry.get("title", ""),
+                        extra_info=entry,
+                        type=TrackType.Dynamic,
+                    )
+                )
+            duration = (time.perf_counter() - start_time) * 1000
+            logging.info(f"YTM Get (Playlist/Channel) finished in {duration:.2f}ms for {url}")
+            return tracks
 
         video_id = None
         if extra_info and "videoId" in extra_info:

@@ -676,10 +676,10 @@ class DownloadPlaylistCommand(Command):
                 )
                 return
 
-            if len(tracks) == 1 and not (arg.startswith("http") and ("playlist" in arg or "album" in arg or "list=" in arg)):
-                # If it's just a single track and not explicitly a playlist/album link
+            if len(tracks) == 1 and not (arg.startswith("http") and ("playlist" in arg or "album" in arg or "list=" in arg or "channel" in arg or "/@" in arg or "/c/" in arg or "/user/" in arg)):
+                # If it's just a single track and not explicitly a playlist/album/channel link
                 self.ttclient.send_message(
-                    self.translator.translate("This command is for playlists and albums. For single tracks, use 'dl'."),
+                    self.translator.translate("This command is for playlists, albums, and channels. For single tracks, use 'dl'."),
                     user
                 )
                 return
