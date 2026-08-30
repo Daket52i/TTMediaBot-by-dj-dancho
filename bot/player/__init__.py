@@ -56,6 +56,9 @@ class Player:
         self.volume = self.config.default_volume
         self.is_playlist: bool = False
         self._navigation_lock = threading.RLock()
+        self._playback_trace_lock = threading.Lock()
+        self._playback_trace_counter = 0
+        self._playback_trace: Dict[str, Any] = {}
 
         self.queue: QueueManager = QueueManager()
 
@@ -66,6 +69,13 @@ class Player:
     def run(self) -> None:
         logging.debug("Registering player callbacks")
         self.register_event_callback("end-file", self.on_end_file)
+        for event_name in (
+            "start-file",
+            "file-loaded",
+            "audio-reconfig",
+            "playback-restart",
+        ):
+            self._register_playback_timing_event(event_name)
         self._player.observe_property("metadata", self.on_metadata_update)
         self._player.observe_property("media-title", self.on_metadata_update)
         logging.debug("Player callbacks registered")
@@ -115,6 +125,7 @@ class Player:
         self.is_playlist = False
 
     def _play(self, arg: str, save_to_recents: bool = True) -> None:
+        trace = self._start_playback_trace()
         if save_to_recents:
             try:
                 if 0 <= self.track_index < len(self.track_list):
@@ -139,7 +150,45 @@ class Player:
                 
         self._player.pause = False
         self._player.play(arg)
+        self._log_playback_timing("mpv_play_submitted", trace)
         threading.Timer(1.0, self._prefetch_next_track).start()
+
+    def _start_playback_trace(self) -> Dict[str, Any]:
+        with self._playback_trace_lock:
+            self._playback_trace_counter += 1
+            trace = {
+                "id": self._playback_trace_counter,
+                "started_at": time.perf_counter(),
+                "track": self.track.name or "Unknown",
+                "service": self.track.service or "unknown",
+            }
+            self._playback_trace = trace
+        self._log_playback_timing("player_play_started", trace)
+        return trace
+
+    def _log_playback_timing(
+        self, stage: str, trace: Optional[Dict[str, Any]] = None
+    ) -> None:
+        current_trace = trace or self._playback_trace
+        if not current_trace:
+            return
+        elapsed_ms = (
+            time.perf_counter() - current_trace["started_at"]
+        ) * 1000
+        logging.info(
+            "[PlaybackTiming] "
+            f"trace={current_trace['id']} "
+            f"stage={stage} "
+            f"elapsed_ms={elapsed_ms:.2f} "
+            f"service={current_trace['service']} "
+            f"track={current_trace['track']!r}"
+        )
+
+    def _register_playback_timing_event(self, event_name: str) -> None:
+        def callback(_: mpv.MpvEvent) -> None:
+            self._log_playback_timing(event_name)
+
+        self.register_event_callback(event_name, callback)
 
     def _sync_index_list(self) -> None:
         if self.mode == Mode.Random:

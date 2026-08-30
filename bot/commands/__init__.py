@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from threading import Thread
 from typing import Any, Dict, List, TYPE_CHECKING, Tuple
 
@@ -128,9 +129,20 @@ class CommandProcessor:
                 self.current_command_id = id(command)
                 result = command(arg, message.user)
                 if result:
+                    response_started_at = time.perf_counter()
                     self.ttclient.send_message(
                         result,
                         message.user,
+                    )
+                    response_elapsed_ms = (
+                        time.perf_counter() - response_started_at
+                    ) * 1000
+                    response_preview = str(result).replace("\n", "\\n")[:300]
+                    logging.info(
+                        "[PlaybackTiming] command_response_sent "
+                        f"command={command_name} "
+                        f"send_ms={response_elapsed_ms:.2f} "
+                        f"response={response_preview!r}"
                     )
         except errors.InvalidArgumentError:
             self.ttclient.send_message(
