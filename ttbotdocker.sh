@@ -1629,6 +1629,27 @@ clear_bot_logs() {
     read -p "Press Enter to continue..."
 }
 
+# Function: Clear Bot Cache Files
+clear_bot_caches() {
+    header
+    echo -e "${YELLOW} --- Clear All Bot Cache Files --- ${NC}"
+    echo "This will delete all *.cache and *.dat files in all bot folders."
+    echo ""
+    read -p "Are you sure you want to clear all bot cache files? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+        return
+    fi
+
+    echo ""
+    if [ -d "$BOTS_ROOT" ]; then
+        find "$BOTS_ROOT" -type f \( -name "*.cache" -o -name "*.dat" \) -delete
+        echo -e "${GREEN}All bot cache files deleted!${NC}"
+    else
+        echo -e "${YELLOW}No bots folder found. Nothing to clear.${NC}"
+    fi
+    read -p "Press Enter to continue..."
+}
+
 # Function: Manage Bots
 manage_bots() {
     # Show menu once
@@ -1646,7 +1667,8 @@ manage_bots() {
         echo "9. Bulk Update Configuration"
         echo "10. Backup / Restore Bots"
         echo "11. Clear All Bot Logs"
-        echo "12. Return to Main Menu"
+        echo "12. Clear All Bot Cache Files"
+        echo "13. Return to Main Menu"
         echo ""
         read -p "Choose an option: " opt_manage
         
@@ -1711,6 +1733,10 @@ manage_bots() {
                 header
                 ;;
             12)
+                clear_bot_caches
+                header
+                ;;
+            13)
                 return
                 ;;
             *)
