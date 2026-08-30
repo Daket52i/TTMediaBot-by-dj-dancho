@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 class Player:
     def __init__(self, bot: Bot):
+        self.bot = bot
         self.config = bot.config.player
         self.cache = bot.cache
         self.cache_manager = bot.cache_manager
