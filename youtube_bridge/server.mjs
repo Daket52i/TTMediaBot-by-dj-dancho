@@ -322,18 +322,34 @@ async function getPlaylist(body) {
   if (!playlistId) throw new Error('Invalid YouTube playlist URL or ID');
   const context = await getSession(body.cookie_file);
   const playlist = await context.session.getPlaylist(playlistId);
-  const items = playlist?.items || playlist?.videos || [];
+  const allItems = [...(playlist?.items || playlist?.videos || [])];
+
+  let current = playlist;
+  while (current?.has_continuation) {
+    try {
+      current = await current.getContinuation();
+      const pageItems = current?.items || current?.videos || [];
+      if (!pageItems.length) break;
+      allItems.push(...pageItems);
+    } catch (error) {
+      console.warn(`[youtube-bridge] Playlist pagination completed or stopped: ${error.message}`);
+      break;
+    }
+  }
+
+  console.log(`[youtube-bridge] playlist ${playlistId} fetched ${allItems.length} total items`);
+
   return {
     id: playlistId,
     title: textValue(playlist?.info?.title),
     uploader: textValue(playlist?.info?.author?.name),
-    entries: items.map((item) => {
+    entries: allItems.map((item) => {
       const id = item.id || item.video_id || item.content_id;
       return {
         id,
         videoId: id,
         title: textValue(item.title) || textValue(item.metadata?.title),
-        uploader: textValue(item.author?.name) || textValue(item.metadata?.author?.name),
+        uploader: textValue(item.author?.name) || textValue(item.metadata?.author?.name) || textValue(item.short_by_line_text?.toString?.()),
         webpage_url: id ? `https://www.youtube.com/watch?v=${id}` : ''
       };
     }).filter((item) => item.id)

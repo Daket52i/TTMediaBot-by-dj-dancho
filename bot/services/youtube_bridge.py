@@ -19,14 +19,14 @@ class YouTubeBridge:
         self.client = client
         self.timeout = (5, 30)
 
-    def _post(self, endpoint: str, **payload: Any) -> dict[str, Any]:
+    def _post(self, endpoint: str, timeout: tuple[int, int] | None = None, **payload: Any) -> dict[str, Any]:
         payload.setdefault("cookie_file", self.cookie_file or None)
         payload.setdefault("client", self.client)
         try:
             response = requests.post(
                 f"{self.base_url}{endpoint}",
                 json=payload,
-                timeout=self.timeout,
+                timeout=timeout or self.timeout,
             )
             response.raise_for_status()
             data = response.json()
@@ -69,7 +69,7 @@ class YouTubeBridge:
         return self._post("/info", url=url or None, video_id=video_id or None)
 
     def playlist(self, url: str) -> dict[str, Any]:
-        return self._post("/playlist", url=url)
+        return self._post("/playlist", timeout=(5, 300), url=url)
 
     def search(self, query: str, limit: int) -> dict[str, Any]:
         return self._post("/search", query=query, limit=limit)
