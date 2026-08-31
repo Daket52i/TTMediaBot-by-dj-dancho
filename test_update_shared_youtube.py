@@ -18,7 +18,13 @@ class SharedYouTubeUpdateMigrationTests(unittest.TestCase):
 
         self.assertIn("reconcile_shared_youtube_service", script)
         main = script[script.index("main() {") :]
-        self.assertRegex(main, r"update_and_fix_permissions.*reconcile_shared_youtube_service")
+        self.assertRegex(
+            main,
+            re.compile(
+                r"update_and_fix_permissions.*reconcile_shared_youtube_service",
+                re.DOTALL,
+            ),
+        )
 
     def test_auto_updater_detects_an_unavailable_shared_service(self):
         script = (ROOT / "auto_updater.sh").read_text(encoding="utf-8")
