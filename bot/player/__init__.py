@@ -236,8 +236,35 @@ class Player:
     def _register_playback_timing_event(self, event_name: str) -> None:
         def callback(_: mpv.MpvEvent) -> None:
             self._log_playback_timing(event_name)
+            if event_name in ("file-loaded", "playback-restart"):
+                self._log_mpv_state(event_name)
 
         self.register_event_callback(event_name, callback)
+
+    def _log_mpv_state(self, stage: str) -> None:
+        trace = self._playback_trace
+        if not trace:
+            return
+        cache_state = self._read_mpv_property("demuxer_cache_state") or {}
+        logging.info(
+            "[MPVState] "
+            f"trace={trace['id']} stage={stage} "
+            f"paused_for_cache={self._read_mpv_property('paused_for_cache')!r} "
+            f"cache_buffering_state={self._read_mpv_property('cache_buffering_state')!r} "
+            f"cache_duration={cache_state.get('cache-duration')!r} "
+            f"forward_bytes={cache_state.get('fw-bytes')!r} "
+            f"raw_input_rate={cache_state.get('raw-input-rate')!r} "
+            f"underrun={cache_state.get('underrun')!r} "
+            f"cache_idle={cache_state.get('idle')!r} "
+            f"current_ao={self._read_mpv_property('current_ao')!r} "
+            f"audio_params={self._read_mpv_property('audio_params')!r}"
+        )
+
+    def _read_mpv_property(self, name: str) -> Any:
+        try:
+            return getattr(self._player, name)
+        except Exception:
+            return None
 
     def _sync_index_list(self) -> None:
         if self.mode == Mode.Random:
