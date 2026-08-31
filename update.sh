@@ -76,6 +76,24 @@ start_shared_youtube_service() {
     return 1
 }
 
+shared_youtube_service_supported() {
+    docker image inspect "$BOT_IMAGE" >/dev/null 2>&1 \
+        && docker run --rm --entrypoint test "$BOT_IMAGE" \
+            -f /home/ttbot/TTMediaBot/youtube_services.sh
+}
+
+reconcile_shared_youtube_service() {
+    if ! shared_youtube_service_supported; then
+        return 0
+    fi
+    if curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}Shared YouTube service is unavailable. Recreating it...${NC}"
+    create_shared_youtube_service && start_shared_youtube_service
+}
+
 # Function: Recreate Bot Containers
 recreate_bot_containers() {
     echo -e "${YELLOW}Recreating containers with the new image...${NC}"
@@ -227,6 +245,9 @@ update_and_fix_permissions() {
     # If called manually, we check and create it to avoid overlapping with the auto-updater.
     LOCK_FILE="/tmp/ttmediabot_update.lock"
     if [ "$AUTO_UPDATE" != "true" ]; then
+        if [ "${TTMEDIABOT_UPDATE_REEXECED:-false}" = "true" ]; then
+            trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
+        else
         if [ -f "$LOCK_FILE" ]; then
             echo -e "${RED}Error: Another update is already in progress.${NC}"
             echo "Waiting for it to finish..."
@@ -235,6 +256,7 @@ update_and_fix_permissions() {
         fi
         touch "$LOCK_FILE"
         trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
+        fi
     fi
 
     header
@@ -412,6 +434,9 @@ update_and_fix_permissions() {
         elif [ "$IS_FIRST_INSTALL" = "true" ]; then
             echo -e "${GREEN}First installation detected. Proceeding automatically...${NC}"
             confirm_update="y"
+        elif [ "${TTMEDIABOT_UPDATE_REEXECED:-false}" = "true" ]; then
+            echo -e "${YELLOW}Continuing update with the refreshed updater...${NC}"
+            confirm_update="y"
         elif [ -z "$IMAGE_EXISTS" ]; then
             # No Docker image exists at all — rebuild automatically regardless of local changes
             if [ "$HAS_LOCAL_CHANGES" = true ]; then
@@ -489,6 +514,11 @@ update_and_fix_permissions() {
                      # Update timestamp
                      touch "$SCRIPT_DIR/ttbotdocker.sh"
                      echo -e "${GREEN}Update applied!${NC}"
+                     if [ "${TTMEDIABOT_UPDATE_REEXECED:-false}" != "true" ]; then
+                         echo -e "${YELLOW}Reloading the updated deployment logic...${NC}"
+                         export TTMEDIABOT_UPDATE_REEXECED=true
+                         exec bash "$SCRIPT_DIR/update.sh" "$@"
+                     fi
                 fi
             else
                 echo "Update cancelled."
@@ -628,7 +658,11 @@ install_deps_light() {
 # protecting against crashes if the script modifies itself mid-execution during git reset.
 main() {
     install_deps_light
-    update_and_fix_permissions
+    update_and_fix_permissions "$@"
+
+    # A legacy updater can replace this script while continuing with its old
+    # in-memory functions. Reconcile infrastructure even when no rebuild remains.
+    reconcile_shared_youtube_service || return 1
     
     # The user mandated that service configuration MUST run every time
     # but not block the flow (implemented via --no-block inside the function).
