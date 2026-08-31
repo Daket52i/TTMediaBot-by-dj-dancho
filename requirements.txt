@@ -5,5 +5,4 @@ portalocker
 pydantic
 pyshorteners
 requests
-ytmusicapi
 httpx[http2]
