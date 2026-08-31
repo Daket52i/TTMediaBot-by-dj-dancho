@@ -89,6 +89,13 @@ class YouTubeBridge:
                 self._resolve_cache[cache_key] = (expires_at_ms, resolved)
         return resolved
 
+    def invalidate(self, url: str = "", video_id: str = "") -> None:
+        cache_key = video_id or url
+        if cache_key:
+            with self._resolve_cache_lock:
+                self._resolve_cache.pop(cache_key, None)
+        self._post("/invalidate", url=url or None, video_id=video_id or None)
+
     def info(self, url: str = "", video_id: str = "") -> dict[str, Any]:
         return self._post("/info", url=url or None, video_id=video_id or None)
 
