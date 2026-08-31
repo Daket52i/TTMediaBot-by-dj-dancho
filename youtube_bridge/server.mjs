@@ -363,9 +363,13 @@ async function resolveTrack(body) {
   const resolution = resolveTrackUncached(body, videoId, requestedClient)
     .then((payload) => {
       const ttlMs = streamCacheTtlMs(payload.url);
-      resolveCache.set(cacheKey, payload, ttlMs);
+      const cachedPayload = {
+        ...payload,
+        cache_expires_at_ms: Date.now() + ttlMs
+      };
+      resolveCache.set(cacheKey, cachedPayload, ttlMs);
       console.log(`[youtube-bridge] resolve completed ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} ttl_ms=${Math.round(ttlMs)} cache_entries=${resolveCache.size}`);
-      return payload;
+      return cachedPayload;
     })
     .finally(() => pendingResolutions.delete(cacheKey));
   pendingResolutions.set(cacheKey, resolution);
