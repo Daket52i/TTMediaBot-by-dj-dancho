@@ -155,11 +155,30 @@ start_shared_youtube_service() {
     return 1
 }
 
+shared_youtube_mount_is_current() {
+    local bot_dir bot_name
+
+    for bot_dir in "$BOTS_ROOT"/*; do
+        [ -d "$bot_dir" ] || continue
+        bot_name=$(basename "$bot_dir")
+        docker exec "$YOUTUBE_SERVICE_NAME" test -d "/bots/$bot_name"
+        return
+    done
+
+    return 0
+}
+
 ensure_shared_youtube_service() {
     if ! docker inspect "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1; then
         create_shared_youtube_service || return 1
     fi
-    start_shared_youtube_service
+    start_shared_youtube_service || return 1
+
+    if ! shared_youtube_mount_is_current; then
+        echo -e "${YELLOW}Shared YouTube service has a stale bots mount; recreating it...${NC}"
+        create_shared_youtube_service || return 1
+        start_shared_youtube_service
+    fi
 }
 
 # Function: Recreate Bot Containers
@@ -1617,6 +1636,12 @@ restore_bots() {
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Extraction completed!${NC}"
+        echo -e "${YELLOW}Refreshing the shared YouTube service mount...${NC}"
+        create_shared_youtube_service || {
+            echo -e "${RED}Could not recreate the shared YouTube service.${NC}"
+            read -p "Press Enter to continue..."
+            return
+        }
         echo -e "${YELLOW}Recreating bot containers from restored configs...${NC}"
         
         # We need to recreate containers
@@ -1625,6 +1650,11 @@ restore_bots() {
         # Start them
         echo -e "${YELLOW}Starting restored bots...${NC}"
         docker start $(docker ps -a -q -f "label=role=ttmediabot") >/dev/null 2>&1
+        start_shared_youtube_service || {
+            echo -e "${RED}Bots were restored, but the shared YouTube service failed to start.${NC}"
+            read -p "Press Enter to continue..."
+            return
+        }
         
         echo -e "${GREEN}Restore completed and bots started!${NC}"
     else
