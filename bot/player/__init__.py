@@ -19,6 +19,9 @@ if TYPE_CHECKING:
     from bot import Bot
 
 
+PREFETCH_DELAY_SECONDS = 0.05
+
+
 class Player:
     def __init__(self, bot: Bot):
         self.bot = bot
@@ -165,7 +168,10 @@ class Player:
         with self._prefetch_timer_lock:
             if self._prefetch_timer is not None:
                 self._prefetch_timer.cancel()
-            timer = threading.Timer(1.0, self._prefetch_next_track)
+            timer = threading.Timer(
+                PREFETCH_DELAY_SECONDS,
+                self._prefetch_next_track,
+            )
             timer.daemon = True
             self._prefetch_timer = timer
             timer.start()
