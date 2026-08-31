@@ -63,10 +63,10 @@ restart_servers() {
 
 while true; do
     header
-    echo "1. Start Servers"
-    echo "2. Stop Servers"
-    echo "3. Restart Servers"
-    echo "4. Return"
+    printf '  [1] Start Servers\n'
+    printf '  [2] Stop Servers\n'
+    printf '  [3] Restart Servers\n'
+    printf '  [4] Return\n'
     echo ""
     read -p "Choose an option: " option
 
