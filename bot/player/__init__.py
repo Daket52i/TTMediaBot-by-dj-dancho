@@ -621,6 +621,14 @@ class Player:
         return " - ".join(chunks)
 
     def on_end_file(self, event: mpv.MpvEvent) -> None:
+        event_data = event.as_dict().get("event") or {}
+        reason = event_data.get("reason")
+        if reason not in (mpv.MpvEventEndFile.EOF, mpv.MpvEventEndFile.ERROR):
+            logging.info(
+                "[PlaybackTiming] end_file_ignored "
+                f"reason={reason} track={self.track.name!r}"
+            )
+            return
         if self.state == State.Playing and self._player.idle_active:
             if self.mode == Mode.SingleTrack or self.track.type == TrackType.Direct:
                 # Mesmo em SingleTrack/Direct, a fila tem prioridade
