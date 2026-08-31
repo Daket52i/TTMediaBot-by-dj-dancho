@@ -44,7 +44,7 @@ TTMediaBot therefore migrated YouTube search and stream resolution to a long-run
 
 Earlier YouTube.js builds started a Node.js bridge and PO-token provider inside every bot container. That design isolated instances, but multiplied memory use and startup load as the bot count increased. The current architecture runs both Node.js processes once in the dedicated `ttmediabot-youtube` container:
 
-1. A bot sends search or resolve requests to the shared bridge over the private Docker network.
+1. A bot running with host networking sends search or resolve requests to the bridge through the host-only endpoint `http://127.0.0.1:4417`.
 2. The request includes a validated bot identifier, which selects only that bot's `bots/<name>/cookies.txt` file.
 3. The bridge maintains isolated authenticated sessions per cookie file while sharing bounded infrastructure caches and pending-request deduplication.
 4. The bridge resolves a playable audio stream and the Python bot passes it to `mpv`.
@@ -68,6 +68,7 @@ This fork includes optimized support for **YouTube Music** alongside regular You
 - **Performance Focus & Warmup:** Persistent sessions and background pre-warming reduce first-request latency, while bounded caches accelerate repeated stream resolution
 - **Unified Cookie System:** Both YouTube and YouTube Music use the same cookies configuration for authentication
 - **📦 Playlist & Album Downloads:** Full support for downloading entire collections via the `dlp` command with metadata-aware naming
+- **Complete Playlist Loading:** YouTube playlists and channel URLs use continuation pagination, with loading progress and the final track count reported to the requester
 - **🕵️ Real-time PM Progress:** Stay updated on your downloads without cluttering the channel
 
 Switch between services using the `sv` command:
@@ -153,12 +154,12 @@ Send these commands to the bot via private message (PM) or in the channel (if en
 | **p** | `[query]` | Plays tracks found for query. If no query, pauses/resumes. |
 | **u** | `[url]` | Plays a stream/file from a direct URL. |
 | **s** | | Stops playback. |
-| **n** | | Plays the next track. |
+| **n** | `[number/?]` | Plays the next track, jumps to a positive or negative track index, or reports the current position with `?`. |
 | **b** | | Plays the previous track. |
 | **v** | `[0-100]` | Sets volume. No arg shows current volume. |
 | **sb** | `[seconds]` | Seeks backward. Default step if no arg. |
 | **sf** | `[seconds]` | Seeks forward. Default step if no arg. |
-| **c** | `[number]` | Selects a track by number from search results. |
+| **c** | `[number/?]` | Selects a positive or negative track index; without an argument or with `?`, reports the current position. |
 | **m** | `[mode]` | Sets playback mode: `SingleTrack`, `RepeatTrack`, `TrackList`, `RepeatTrackList`, `Random`. |
 | **sp** | `[0.25-4]` | Sets playback speed. |
 | **sv** | `[service]` | Switches service (e.g., `sv yt`, `sv ytm`). |
@@ -183,7 +184,7 @@ Send these commands to the bot via private message (PM) or in the channel (if en
 | **qs** | | Skips current track and plays the next one from the queue. |
 | **sr** | `[on/off]` | Toggles Search Results Mode. When active, `p QUERY` shows a numbered list instead of playing immediately. Save with `sc`. |
 | **sl** | `[number]` | Selects and plays result NUMBER from the last `sr` search list. |
-| **slc** | `[number]` | Sets how many results are shown in `sr` mode (default 5). No arg shows current count. |
+| **slc** | `[number]` | Sets how many results are shown in `sr` mode. The volatile count defaults to 1 after every restart; no argument shows the current count. |
 | **a** | | Shows about info. |
 
 ### Admin Commands
@@ -342,6 +343,9 @@ Advanced cleanup tool to reclaim disk space without affecting running bots:
 - **Buildx Cleanup:** Wipes persistent build caches.
 - **System Logs:** Vacuums `journalctl` logs older than 1 day.
 - **Zero-Footprint:** Ensures the host system stays lean.
+
+> [!CAUTION]
+> This is a host-wide Docker cleanup, not a TTMediaBot-only cleanup. Unused containers, images, volumes, and build caches belonging to other Docker projects may also be removed. Running containers are not removed.
 
 #### 8. Manage Shared YouTube Servers
 Launches `youtube_server_manager.sh` to control the shared YouTube backend independently:
@@ -504,7 +508,7 @@ TTMediaBot supports multiple languages. Change language using the `cl` admin com
 
 ### Bot Not Playing YouTube Music
 
-**Symptoms:** Bot connects but won't play YouTube tracks
+**Symptoms:** Bot connects but YouTube or YouTube Music tracks do not start
 
 **Solutions:**
 1. **Check cookies:**
@@ -523,6 +527,13 @@ TTMediaBot supports multiple languages. Change language using the `cl` admin com
      docker logs [bot_name]
      ```
    - **Log file:** Check `bots/[bot_name]/TTMediaBot.log` directly.
+
+4. **Check the shared YouTube service:**
+   ```bash
+   curl -fsS http://127.0.0.1:4417/health
+   docker logs --tail 100 ttmediabot-youtube
+   ```
+   You can also use option `8` in `ttbotdocker.sh` to restart the shared servers without restarting the bots.
 
 ### Bot Won't Connect to Server
 
@@ -609,7 +620,7 @@ cp -r bots bots_backup_$(date +%Y%m%d)
 ```
 
 ### Q: Can I use the same cookies for all bots?
-**A:** Yes! Use the "Update Cookies (All Bots)" feature in the management menu to apply the same cookies file to all bots at once.
+**A:** Yes. Use "Update Cookies (All Bots)" in the management menu to apply one cookies file to every bot. The bridge still creates a separately keyed session for each bot/cookie file, so requests do not accidentally select another bot's cookie path.
 
 ### Q: The bot keeps disconnecting. What should I do?
 **A:** Check:
@@ -627,15 +638,10 @@ cp -r bots bots_backup_$(date +%Y%m%d)
 **A:** Absolutely! Each bot can connect to a different server. Just specify different hostnames during creation or in the configuration.
 
 ### Q: How much resources does each bot use?
-**A:** Each bot container uses approximately:
-- **RAM:** 100-200 MB (idle), 200-400 MB (playing)
-- **CPU:** Minimal when idle, moderate when transcoding audio
-- **Disk:** ~500 MB per bot (including dependencies)
+**A:** Resource use depends on active playback, downloads, FFmpeg transcoding, and TeamTalk traffic. Bot containers share the same Docker image layers and one `ttmediabot-youtube` backend, so Node.js and image dependencies are not duplicated per bot. Each bot adds its Python/TeamTalk process, runtime memory, configuration, cache, logs, and downloaded files. Use `docker stats` for measurements on your host.
 
 ### Q: What happens if I update the repository code?
-**A:** Your bot configurations in the `bots` directory are preserved. After pulling updates:
-1. Rebuild the Docker image: `docker build -t ttmediabot .`
-2. Recreate containers using the script's recreate function
+**A:** Bot configurations in `bots/` are preserved. Use option `3` in `ttbotdocker.sh` for a manual rebuild or run `update.sh`; the supported workflow backs up bot data, synchronizes the repository, rebuilds the image, recreates and health-checks the shared YouTube service, then recreates bot containers while preserving their previous running/stopped state.
 
 ---
 
@@ -652,7 +658,15 @@ docker logs -f [bot_name]
 
 **For all bots:**
 ```bash
-docker logs -f $(docker ps -q -f "label=role=ttmediabot")
+for bot in $(docker ps --format '{{.Names}}' -f "label=role=ttmediabot"); do
+    echo "===== $bot ====="
+    docker logs --tail 100 "$bot"
+done
+```
+
+**For the shared YouTube bridge and PO-token provider:**
+```bash
+docker logs -f ttmediabot-youtube
 ```
 
 ### Log Files Location
@@ -701,8 +715,18 @@ docker ps -a -f "label=role=ttmediabot"
 
 **Check resource usage:**
 ```bash
-docker stats $(docker ps -q -f "label=role=ttmediabot")
+docker stats $(docker ps -q -f "label=role=ttmediabot") ttmediabot-youtube
 ```
+
+### Playback Latency Diagnostics
+
+Search the bot log for `[PlaybackTiming]` to follow one request through command handling, search, task-queue wait, stream resolution, `mpv` loading, and playback start:
+
+```bash
+grep '\[PlaybackTiming\]' bots/[bot_name]/TTMediaBot.log
+```
+
+Bridge-side cache hits, misses, pending-resolution joins, selected clients, and resolution time are written to `docker logs ttmediabot-youtube`. Comparing both logs separates TeamTalk command latency, queue pressure, YouTube resolution time, and `mpv` startup time.
 
 ---
 
