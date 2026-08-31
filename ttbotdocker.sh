@@ -7,6 +7,8 @@ CONFIG_SOURCE="config.json"
 
 # Configuration
 BOT_IMAGE="ttmediabot"
+YOUTUBE_SERVICE_NAME="ttmediabot-youtube"
+YOUTUBE_BRIDGE_URL="http://127.0.0.1:4417"
 
 # Auto-elevate to root via sudo if needed
 if [ "$EUID" -ne 0 ]; then
@@ -119,6 +121,46 @@ install_dependencies() {
 install_dependencies
 
 
+create_shared_youtube_service() {
+    docker rm -f "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1 || true
+    docker create \
+        --name "$YOUTUBE_SERVICE_NAME" \
+        --network host \
+        --label "role=ttmediabot-infrastructure" \
+        --restart always \
+        -e "TTMEDIABOT_BOTS_ROOT=/bots" \
+        -v "${BOTS_ROOT}:/bots:ro" \
+        --entrypoint /bin/bash \
+        "$BOT_IMAGE" \
+        /home/ttbot/TTMediaBot/youtube_services.sh >/dev/null
+}
+
+start_shared_youtube_service() {
+    docker start "$YOUTUBE_SERVICE_NAME" >/dev/null
+    echo -n "Waiting for shared YouTube service"
+    for _ in $(seq 1 60); do
+        if curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+            echo -e " [ ${GREEN}OK${NC} ]"
+            return 0
+        fi
+        if [ "$(docker inspect -f '{{.State.Running}}' "$YOUTUBE_SERVICE_NAME" 2>/dev/null)" != "true" ]; then
+            break
+        fi
+        echo -n "."
+        sleep 0.5
+    done
+    echo -e " [ ${RED}FAILED${NC} ]"
+    docker logs --tail 30 "$YOUTUBE_SERVICE_NAME" 2>&1
+    return 1
+}
+
+ensure_shared_youtube_service() {
+    if ! docker inspect "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1; then
+        create_shared_youtube_service || return 1
+    fi
+    start_shared_youtube_service
+}
+
 # Function: Recreate Bot Containers
 recreate_bot_containers() {
     echo -e "${YELLOW}Recreating containers with the new image...${NC}"
@@ -148,6 +190,7 @@ recreate_bot_containers() {
                 --name "${bot_name}" \
                 --network host \
                 -e "TTBOT_INSTANCE=${bot_name}" \
+                -e "YOUTUBE_BRIDGE_URL=${YOUTUBE_BRIDGE_URL}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${d}:/home/ttbot/TTMediaBot/data" \
@@ -211,7 +254,8 @@ force_rebuild_image() {
     RUNNING_NAMES=$(docker ps --format "{{.Names}}" -f "label=role=ttmediabot")
     
     echo -e "${YELLOW}Building new image (updating code and PIP libraries)...${NC}"
-    docker build --build-arg CACHEBUST=$(date +%s) -t ${BOT_IMAGE} .
+    CURRENT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    docker build --build-arg CACHEBUST=$(date +%s) --label "commit_hash=$CURRENT_HASH" -t ${BOT_IMAGE} .
     
     if [ $? -eq 0 ]; then
          echo -e "${GREEN}Image updated successfully!${NC}"
@@ -222,7 +266,9 @@ force_rebuild_image() {
          fi
          
          # Recreate containers to use new image
+         create_shared_youtube_service || return
          recreate_bot_containers
+         start_shared_youtube_service || return
          
          if [ ! -z "$RUNNING_NAMES" ]; then
              echo -e "${YELLOW}Restarting active bots...${NC}"
@@ -525,6 +571,7 @@ create_bot() {
         --name "${current_bot_name}" \
         --network host \
         -e "TTBOT_INSTANCE=${current_bot_name}" \
+        -e "YOUTUBE_BRIDGE_URL=${YOUTUBE_BRIDGE_URL}" \
         --label "role=ttmediabot" \
         --restart always \
         -v "${CURRENT_BOT_DIR}:/home/ttbot/TTMediaBot/data" \
@@ -542,6 +589,7 @@ create_bot() {
     echo ""
     echo -e "${YELLOW}Starting all bots in parallel...${NC}"
     # Start all newly created bots in parallel
+    ensure_shared_youtube_service || return
     docker start $(docker ps -a -q -f "label=role=ttmediabot" -f "status=created") 2>/dev/null
     
     echo -e "${GREEN}Creation completed! $total_bots bot(s) created and started.${NC}"
@@ -1310,6 +1358,7 @@ duplicate_bot() {
                 --name "${current_bot_name}" \
                 --network host \
                 -e "TTBOT_INSTANCE=${current_bot_name}" \
+                -e "YOUTUBE_BRIDGE_URL=${YOUTUBE_BRIDGE_URL}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${CURRENT_BOT_DIR}:/home/ttbot/TTMediaBot/data" \
@@ -1326,6 +1375,7 @@ duplicate_bot() {
         echo ""
         echo -e "${YELLOW}Starting all bots in parallel...${NC}"
         # Start all newly created bots in parallel
+        ensure_shared_youtube_service || return
         docker start $(docker ps -a -q -f "label=role=ttmediabot" -f "status=created") 2>/dev/null
         
         echo -e "${GREEN}Duplication completed! $total_bots bot(s) created and started.${NC}"
@@ -1754,6 +1804,7 @@ if [ -f "$SCRIPT_DIR/update.sh" ]; then
 fi
 
 build_image
+ensure_shared_youtube_service || exit 1
 
 # Main Menu
 mkdir -p "$BOTS_ROOT"
