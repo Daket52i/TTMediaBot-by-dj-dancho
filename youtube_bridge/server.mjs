@@ -4,6 +4,8 @@ import { statSync } from 'node:fs';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { ClientType, Innertube, UniversalCache, Platform } from 'youtubei.js';
+import { ExpiringLruCache } from './cache.mjs';
+import { normalizeSearchKey } from './media.mjs';
 
 const HOST = process.env.YOUTUBE_BRIDGE_HOST || '127.0.0.1';
 const PORT = Number(process.env.YOUTUBE_BRIDGE_PORT || 4417);
@@ -22,6 +24,8 @@ const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESOLVE_CACHE_MAX_ENTRIES = 256;
 const resolveCache = new Map();
 const pendingResolutions = new Map();
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const searchCache = new ExpiringLruCache({ maxEntries: 512 });
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -474,19 +478,26 @@ async function searchVideos(body) {
   if (!query) throw new Error('Search query is required');
   const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 50);
   const startedAt = performance.now();
-  const session = await getSearchSession();
-  const search = await session.search(query, { type: 'video' });
-  const videos = search?.videos || [];
-  console.log(`[youtube-bridge] searched "${query}" in ${Math.round(performance.now() - startedAt)}ms`);
-  return {
-    entries: videos.slice(0, limit).map((video) => ({
+  const cacheKey = normalizeSearchKey('video', query);
+  const cached = searchCache.get(cacheKey);
+  if (cached) {
+    console.log(`[youtube-bridge] search cache hit mode=video query="${query}" elapsed_ms=${Math.round(performance.now() - startedAt)}`);
+    return { entries: cached.slice(0, limit) };
+  }
+
+  const entries = await searchCache.getOrCreate(cacheKey, SEARCH_CACHE_TTL_MS, async () => {
+    const session = await getSearchSession();
+    const search = await session.search(query, { type: 'video' });
+    return (search?.videos || []).slice(0, 50).map((video) => ({
       id: video.id,
       videoId: video.id,
       title: textValue(video.title),
       uploader: textValue(video.author?.name),
       webpage_url: video.id ? `https://www.youtube.com/watch?v=${video.id}` : ''
-    })).filter((video) => video.id)
-  };
+    })).filter((video) => video.id);
+  });
+  console.log(`[youtube-bridge] searched mode=video query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
+  return { entries: entries.slice(0, limit) };
 }
 
 async function getDownloadPlan(body) {
