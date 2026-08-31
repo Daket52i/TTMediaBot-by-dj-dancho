@@ -4,6 +4,86 @@ All notable updates to this fork are documented here, in reverse chronological o
 
 ---
 
+## 🆕 v2.7.0 — "Shared YouTube Service, Playback Diagnostics & Queue Reliability" *(08/30/2026)*
+
+### 🏗️ Shared Multi-Bot YouTube Architecture
+- **🌐 One Backend for Every Bot:**
+  Replaced the per-bot Node.js bridge and PO-token provider with one managed `ttmediabot-youtube` container. Bot containers are now Python-only and connect to the shared bridge through the private Docker network.
+- **🍪 Per-Bot Authentication Isolation:**
+  Added validated `bot_id` routing so each request uses only its corresponding `bots/<name>/cookies.txt`. Cookie-backed YouTube.js sessions are isolated and retained in a bounded 64-entry least-recently-used cache.
+- **⚡ Shared Resolution and Request Caches:**
+  Added bounded stream-resolution caching, in-flight request deduplication, and session reuse to avoid repeating expensive extraction work across searches and track transitions.
+- **🔁 Resilient Bridge Connections:**
+  Added five bounded connection attempts with exponential backoff when the shared service is starting or restarting.
+- **🔒 Reduced Service Exposure:**
+  Bound the bridge to `127.0.0.1:4417` on the host and kept the PO-token provider on port `4416` internal to the shared container.
+- **🧩 Shared Service Supervisor:**
+  Added `youtube_services.sh` to supervise both Node.js processes and propagate shutdown cleanly.
+
+### 🐳 Docker Lifecycle and Management
+- **🎛️ Dedicated Server Controls:**
+  Added main-menu option **8** and `youtube_server_manager.sh` with Start, Stop, Restart, and Return actions. Start and restart wait for a successful bridge health check.
+- **🔄 Rebuild and Migration Support:**
+  Updated `ttbotdocker.sh` to create, health-check, and reuse the shared service, remove obsolete per-bot service processes, and migrate installations built from the legacy image layout.
+- **⬆️ Updater Integration:**
+  Updated `update.sh` to deploy and validate the shared service before recreating bot containers while preserving their previous running state.
+- **🗑️ Uninstaller Integration:**
+  Updated safe and full uninstall paths to remove the shared YouTube container and network resources in scope.
+- **🧹 Bot Cache Cleanup:**
+  Added Manage Bots option **12** to delete `*.cache` and `*.dat` files strictly below managed directories in `bots/`, with confirmation and per-bot reporting. Return moved to option **13**.
+
+### ⏱️ Playback Performance and Observability
+- **📊 End-to-End Timing Logs:**
+  Added correlated measurements for typed search commands, result selection, next-track transitions, URL resolution, `mpv` handoff, and actual playback start across all media services.
+- **🔎 Startup and Service Timings:**
+  Added timing logs for service initialization and background warm-up so first-request behavior can be compared with long-running behavior.
+- **🔥 Background Pre-Warming:**
+  Moved YouTube session/search warm-up out of the blocking startup path and retained a fast health endpoint so bot startup is not delayed by external requests.
+- **💾 Stream Resolution Cache:**
+  Cached reusable resolved streams and removed repeated URL-resolution work from the hot playback path.
+- **🚦 Bounded Prefetch:**
+  Limited background prefetch work and pending requests to prevent queue growth and progressive playback slowdown during long sessions.
+- **📝 Reduced Hot-Path Log Noise:**
+  Removed repeated stream-URL logging while preserving structured latency and failure diagnostics.
+- **🎧 MPV Buffer Tuning:**
+  Increased playback buffer and read-ahead settings, and standardized PulseAudio/MPV output to 48 kHz stereo for more stable playback handoff.
+
+### 🛡️ YouTube Playback and PO-Token Fixes
+- **🔑 Video-Bound PO Tokens:**
+  Corrected GVS PO-token generation so tokens are bound to the target video ID, resolving authenticated stream failures and intermittent HTTP 403 responses.
+- **🧍 Isolated Shared Token Provider:**
+  Separated token-provider state from bot sessions while retaining per-bot cookie selection in the shared bridge.
+- **🧯 Playback State Hardening:**
+  Fixed missing bot assignment and protected recent-track access from `IndexError` during asynchronous playback transitions.
+
+### 📻 Queue, Playlist, and Autoplay Improvements
+- **♾️ Continuous Recommendations:**
+  Added continuous autoplay replenishment with multiple recommendation candidates, greater radio variety, and automatic skipping of unavailable suggestions.
+- **📚 Complete Playlist Pagination:**
+  Added YouTube playlist continuation support, including desktop `WEB` continuations, progress reporting, and final loaded-track totals.
+- **🔀 Full-Playlist Random Mode:**
+  Random playback now covers the complete playlist, starts with a randomized first track, reshuffles endlessly, and keeps the internal index list synchronized.
+- **🔗 Channel URL Recognition:**
+  YouTube and YouTube Music channel URLs are now treated as playlist-style collections where supported.
+- **⏹️ Playlist Boundary Rules:**
+  Continuous autoplay is disabled for explicit playlists and end-of-list behavior now respects the selected playback mode.
+
+### 🎮 Playback Commands and Localization
+- **🔢 Direct Next Selection:**
+  Extended `n` with an optional track number for direct queue navigation.
+- **📍 Position Queries:**
+  Added `n ?` and `c ?` queries to report the current queue/search position without changing playback.
+- **🌍 Complete Translation Coverage:**
+  Added the new command and playback messages to all seven maintained locale catalogs and recompiled GNU MO files with UTF-8 metadata.
+
+### 🧰 Maintenance
+- **🗑️ Legacy Workflow Removal:**
+  Removed the obsolete nightly update workflow after the backend migration.
+- **🙈 Diagnostic Artifact Ignore Rule:**
+  Added the local `fast_forensics.py` utility to `.gitignore` so server diagnostics cannot be committed accidentally.
+
+---
+
 ## 🆕 v2.6.0 — "YouTube.js Bridge Architecture & Native Stream Resolution" *(08/29/2026)*
 
 ### 🚀 YouTube.js Bridge Architecture (Goodbye `yt-dlp` & `py-yt-search`)
