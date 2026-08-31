@@ -33,6 +33,7 @@ class Player:
             "audio_samplerate": 48000,
             "audio_channels": "stereo",
             "audio_format": "s16",
+            "gapless_audio": "yes",
             "cache": "yes",
             "cache_secs": 120,
             "demuxer_max_bytes": 67108864,
