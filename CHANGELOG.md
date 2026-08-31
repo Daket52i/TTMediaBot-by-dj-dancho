@@ -30,6 +30,16 @@ All notable updates to this fork are documented here, in reverse chronological o
 - **✅ Regression Coverage:**
   Added Node tests for TTL/LRU behavior, pending-request deduplication, media mapping, and URL-expiry calculations, plus Python tests for bridge contracts, YTM migration, stream refresh, and one-shot player recovery.
 
+### 🧪 Clean-Rebuild Verification
+- **📦 Runtime Dependency Removal:**
+  Confirmed after an option **3** rebuild that `ytmusicapi` is absent from the generated image and that the shared YouTube service and bot container start healthy.
+- **✅ Automated Validation:**
+  Executed all 18 migration tests successfully: nine Node.js tests for bridge primitives and nine Python tests for service and playback contracts.
+- **⚡ Integration Measurements:**
+  Verified YouTube video search, YouTube Music song search, authenticated Up Next, stream invalidation, fresh resolution, and cache reuse. On the validation host, repeated searches fell from approximately 0.47–0.54 seconds to 3–4 milliseconds, and a forced fresh resolution fell from approximately 0.37 seconds to about 3 milliseconds on cache reuse.
+- **🎧 Long-Media Compatibility:**
+  Resolved a 36,107-second video through the YTMUSIC client while retaining the established long-media `mpv` configuration and the bounded one-shot stale-stream recovery path.
+
 ---
 
 ## 🆕 v2.7.0 — "Shared YouTube Service, Playback Diagnostics & Queue Reliability" *(08/31/2026)*
