@@ -5,7 +5,7 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import { ClientType, Innertube, UniversalCache, Platform } from 'youtubei.js';
 import { ExpiringLruCache } from './cache.mjs';
-import { musicItemPayload, normalizeSearchKey } from './media.mjs';
+import { musicItemPayload, normalizeSearchKey, streamCacheTtlMs } from './media.mjs';
 
 const HOST = process.env.YOUTUBE_BRIDGE_HOST || '127.0.0.1';
 const PORT = Number(process.env.YOUTUBE_BRIDGE_PORT || 4417);
@@ -20,9 +20,8 @@ Platform.shim.eval = async (data) => new Function(data.output)();
 const SESSION_CACHE_MAX_ENTRIES = 64;
 const sessionCache = new Map();
 let searchSessionPromise = null;
-const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESOLVE_CACHE_MAX_ENTRIES = 256;
-const resolveCache = new Map();
+const resolveCache = new ExpiringLruCache({ maxEntries: RESOLVE_CACHE_MAX_ENTRIES });
 const pendingResolutions = new Map();
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const searchCache = new ExpiringLruCache({ maxEntries: 512 });
@@ -349,13 +348,10 @@ async function resolveTrack(body) {
   const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
   const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
   const cached = resolveCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    resolveCache.delete(cacheKey);
-    resolveCache.set(cacheKey, cached);
+  if (cached) {
     console.log(`[youtube-bridge] resolve cache hit ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${resolveCache.size}`);
-    return cached.payload;
+    return cached;
   }
-  if (cached) resolveCache.delete(cacheKey);
   console.log(`[youtube-bridge] resolve cache miss ${videoId} client=${requestedClient} cache_entries=${resolveCache.size}`);
 
   const pending = pendingResolutions.get(cacheKey);
@@ -366,14 +362,9 @@ async function resolveTrack(body) {
 
   const resolution = resolveTrackUncached(body, videoId, requestedClient)
     .then((payload) => {
-      resolveCache.set(cacheKey, {
-        payload,
-        expiresAt: Date.now() + RESOLVE_CACHE_TTL_MS
-      });
-      while (resolveCache.size > RESOLVE_CACHE_MAX_ENTRIES) {
-        resolveCache.delete(resolveCache.keys().next().value);
-      }
-      console.log(`[youtube-bridge] resolve completed ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${resolveCache.size}`);
+      const ttlMs = streamCacheTtlMs(payload.url);
+      resolveCache.set(cacheKey, payload, ttlMs);
+      console.log(`[youtube-bridge] resolve completed ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} ttl_ms=${Math.round(ttlMs)} cache_entries=${resolveCache.size}`);
       return payload;
     })
     .finally(() => pendingResolutions.delete(cacheKey));
