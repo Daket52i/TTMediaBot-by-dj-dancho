@@ -26,6 +26,8 @@ const resolveCache = new Map();
 const pendingResolutions = new Map();
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const searchCache = new ExpiringLruCache({ maxEntries: 512 });
+const RECOMMENDATION_CACHE_TTL_MS = 10 * 60 * 1000;
+const recommendationCache = new ExpiringLruCache({ maxEntries: 256 });
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -508,6 +510,34 @@ async function searchVideos(body) {
   return { entries: entries.slice(0, limit) };
 }
 
+async function getMusicRecommendations(body) {
+  const videoId = body.video_id || extractVideoId(body.url);
+  if (!videoId) throw new Error('Invalid YouTube URL or video ID');
+  const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 50);
+  const cacheKey = `${cookieFileKey(body.cookie_file)}:${videoId}`;
+  const startedAt = performance.now();
+  const cached = recommendationCache.get(cacheKey);
+  if (cached) {
+    console.log(`[youtube-bridge] recommendations cache hit ${videoId} elapsed_ms=${Math.round(performance.now() - startedAt)}`);
+    return { entries: cached.slice(0, limit) };
+  }
+
+  const entries = await recommendationCache.getOrCreate(
+    cacheKey,
+    RECOMMENDATION_CACHE_TTL_MS,
+    async () => {
+      const { session } = await getSession(body.cookie_file);
+      const playlist = await session.music.getUpNext(videoId, true);
+      return (playlist?.contents || [])
+        .map(musicItemPayload)
+        .filter((item) => item && item.videoId !== videoId)
+        .slice(0, 50);
+    }
+  );
+  console.log(`[youtube-bridge] recommendations completed ${videoId} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${recommendationCache.size}`);
+  return { entries: entries.slice(0, limit) };
+}
+
 async function getDownloadPlan(body) {
   const videoId = body.video_id || extractVideoId(body.url);
   if (!videoId) throw new Error('Invalid YouTube URL or video ID');
@@ -568,6 +598,7 @@ const server = http.createServer(async (req, res) => {
     if (req.url === '/info') return json(res, 200, await getInfo(body));
     if (req.url === '/playlist') return json(res, 200, await getPlaylist(body));
     if (req.url === '/search') return json(res, 200, await searchVideos(body));
+    if (req.url === '/recommendations') return json(res, 200, await getMusicRecommendations(body));
     if (req.url === '/download-plan') return json(res, 200, await getDownloadPlan(body));
     return json(res, 404, { error: 'Not found' });
   } catch (error) {
