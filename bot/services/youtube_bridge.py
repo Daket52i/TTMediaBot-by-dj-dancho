@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import threading
 import time
 from typing import Any
 
@@ -19,6 +20,8 @@ class YouTubeBridge:
         self.bot_id = os.getenv("TTBOT_INSTANCE", "")
         self.client = client
         self.timeout = (5, 30)
+        self._resolve_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._resolve_cache_lock = threading.Lock()
 
     def _post(self, endpoint: str, timeout: tuple[int, int] | None = None, **payload: Any) -> dict[str, Any]:
         payload.setdefault("bot_id", self.bot_id)
@@ -70,7 +73,21 @@ class YouTubeBridge:
         return self.health()
 
     def resolve(self, url: str = "", video_id: str = "") -> dict[str, Any]:
-        return self._post("/resolve", url=url or None, video_id=video_id or None)
+        cache_key = video_id or url
+        now_ms = time.time() * 1000
+        if cache_key:
+            with self._resolve_cache_lock:
+                cached = self._resolve_cache.get(cache_key)
+                if cached and cached[0] > now_ms:
+                    return cached[1]
+                self._resolve_cache.pop(cache_key, None)
+
+        resolved = self._post("/resolve", url=url or None, video_id=video_id or None)
+        expires_at_ms = float(resolved.get("cache_expires_at_ms") or 0)
+        if cache_key and expires_at_ms > now_ms:
+            with self._resolve_cache_lock:
+                self._resolve_cache[cache_key] = (expires_at_ms, resolved)
+        return resolved
 
     def info(self, url: str = "", video_id: str = "") -> dict[str, Any]:
         return self._post("/info", url=url or None, video_id=video_id or None)
