@@ -33,7 +33,7 @@ class TrackRefreshTests(TestCase):
             )]),
         )
 
-        with patch("builtins.get_service_by_name", return_value=service):
+        with patch("builtins.get_service_by_name", return_value=service, create=True):
             refreshed = track.refresh_stream()
 
         self.assertEqual(refreshed, "https://fresh.test/audio")
