@@ -17,6 +17,8 @@ if [ -f "$REAL_USER_HOME/.ssh/id_ed25519" ]; then
 fi
 
 BOT_IMAGE="ttmediabot"
+YOUTUBE_SERVICE_NAME="ttmediabot-youtube"
+YOUTUBE_BRIDGE_URL="http://127.0.0.1:4417"
 
 # Auto-elevate to root via sudo if needed
 if [ "$EUID" -ne 0 ]; then
@@ -38,6 +40,39 @@ header() {
     echo -e "${GREEN}      TTMediaBot Update Utility          ${NC}"
     echo -e "${GREEN}=========================================${NC}"
     echo ""
+}
+
+create_shared_youtube_service() {
+    docker rm -f "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1 || true
+    docker create \
+        --name "$YOUTUBE_SERVICE_NAME" \
+        --network host \
+        --label "role=ttmediabot-infrastructure" \
+        --restart always \
+        -e "TTMEDIABOT_BOTS_ROOT=/bots" \
+        -v "${BOTS_ROOT}:/bots:ro" \
+        --entrypoint /bin/bash \
+        "$BOT_IMAGE" \
+        /home/ttbot/TTMediaBot/youtube_services.sh >/dev/null
+}
+
+start_shared_youtube_service() {
+    docker start "$YOUTUBE_SERVICE_NAME" >/dev/null
+    echo -n "Waiting for shared YouTube service"
+    for _ in $(seq 1 60); do
+        if curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+            echo -e " [ ${GREEN}OK${NC} ]"
+            return 0
+        fi
+        if [ "$(docker inspect -f '{{.State.Running}}' "$YOUTUBE_SERVICE_NAME" 2>/dev/null)" != "true" ]; then
+            break
+        fi
+        echo -n "."
+        sleep 0.5
+    done
+    echo -e " [ ${RED}FAILED${NC} ]"
+    docker logs --tail 30 "$YOUTUBE_SERVICE_NAME" 2>&1
+    return 1
 }
 
 # Function: Recreate Bot Containers
@@ -69,6 +104,7 @@ recreate_bot_containers() {
                 --name "${bot_name}" \
                 --network host \
                 -e "TTBOT_INSTANCE=${bot_name}" \
+                -e "YOUTUBE_BRIDGE_URL=${YOUTUBE_BRIDGE_URL}" \
                 --label "role=ttmediabot" \
                 --restart always \
                 -v "${d}:/home/ttbot/TTMediaBot/data" \
@@ -126,7 +162,9 @@ perform_image_rebuild() {
          fi
          
          # Recreate containers to use new image
+         create_shared_youtube_service || exit 1
          recreate_bot_containers
+         start_shared_youtube_service || exit 1
          
          if [ ! -z "$RUNNING_NAMES" ]; then
              echo "$RUNNING_NAMES" | while read -r name; do
