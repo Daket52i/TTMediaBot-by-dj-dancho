@@ -54,3 +54,13 @@ class YouTubeBridgeContractTests(TestCase):
 
         self.assertEqual(refreshed["url"], "second")
         self.assertEqual(post.call_count, 2)
+
+    def test_invalidate_clears_local_cache_and_notifies_bridge(self):
+        self.bridge._resolve_cache["48Lrud3Bxpc"] = (50_000, {"url": "old"})
+        with patch.object(self.bridge, "_post", return_value={"invalidated": True}) as post:
+            self.bridge.invalidate(video_id="48Lrud3Bxpc")
+
+        self.assertNotIn("48Lrud3Bxpc", self.bridge._resolve_cache)
+        post.assert_called_once_with(
+            "/invalidate", url=None, video_id="48Lrud3Bxpc"
+        )
