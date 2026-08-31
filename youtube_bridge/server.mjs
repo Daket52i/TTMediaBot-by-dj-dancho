@@ -376,6 +376,17 @@ async function resolveTrack(body) {
   return resolution;
 }
 
+function invalidateResolution(body) {
+  const videoId = body.video_id || extractVideoId(body.url);
+  if (!videoId) throw new Error('Invalid YouTube URL or video ID');
+  const requestedClient = body.client === 'YTMUSIC' ? 'YTMUSIC' : 'MWEB';
+  const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${videoId}`;
+  resolveCache.delete(cacheKey);
+  pendingResolutions.delete(cacheKey);
+  console.log(`[youtube-bridge] resolve cache invalidated ${videoId} client=${requestedClient}`);
+  return { invalidated: true };
+}
+
 async function resolveTrackUncached(body, videoId, requestedClient) {
   const context = await getSession(body.cookie_file);
 
@@ -590,6 +601,7 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     body.cookie_file = getBotCookieFile(body.bot_id);
     if (req.url === '/resolve') return json(res, 200, await resolveTrack(body));
+    if (req.url === '/invalidate') return json(res, 200, invalidateResolution(body));
     if (req.url === '/info') return json(res, 200, await getInfo(body));
     if (req.url === '/playlist') return json(res, 200, await getPlaylist(body));
     if (req.url === '/search') return json(res, 200, await searchVideos(body));
