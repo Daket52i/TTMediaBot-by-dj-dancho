@@ -26,6 +26,13 @@ fi
 echo "TTMediaBot Auto-Updater started. Checking every 20 seconds..."
 
 LOCK_FILE="/tmp/ttmediabot_update.lock"
+YOUTUBE_BRIDGE_URL="http://127.0.0.1:4417"
+
+shared_youtube_service_supported() {
+    $SUDO docker image inspect ttmediabot >/dev/null 2>&1 \
+        && $SUDO docker run --rm --entrypoint test ttmediabot \
+            -f /home/ttbot/TTMediaBot/youtube_services.sh
+}
 
 # Cleanup function
 cleanup() {
@@ -86,6 +93,13 @@ while true; do
             echo "$(date): Local code ($LOCAL_HASH) does not match running image ($RUNNING_HASH). Syncing..."
             SHOULD_UPDATE=true
         fi
+    fi
+
+    if [ "$SHOULD_UPDATE" = false ] \
+        && shared_youtube_service_supported \
+        && ! curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+        echo "$(date): Shared YouTube service unavailable. Triggering recovery..."
+        SHOULD_UPDATE=true
     fi
 
     if [ "$SHOULD_UPDATE" = true ]; then
