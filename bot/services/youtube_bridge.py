@@ -78,8 +78,16 @@ class YouTubeBridge:
     def playlist(self, url: str) -> dict[str, Any]:
         return self._post("/playlist", timeout=(5, 300), url=url)
 
-    def search(self, query: str, limit: int) -> dict[str, Any]:
-        return self._post("/search", query=query, limit=limit)
+    def search(
+        self,
+        query: str,
+        limit: int,
+        mode: str = "video",
+    ) -> dict[str, Any]:
+        return self._post("/search", query=query, limit=limit, mode=mode)
+
+    def recommendations(self, video_id: str, limit: int = 20) -> dict[str, Any]:
+        return self._post("/recommendations", video_id=video_id, limit=limit)
 
     def download(self, url: str, file_path: str, video: bool = False) -> None:
         plan = self._post("/download-plan", url=url, video=video)
