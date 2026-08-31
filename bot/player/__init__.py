@@ -239,6 +239,8 @@ class Player:
             self._log_playback_timing(event_name)
             if event_name in ("file-loaded", "playback-restart"):
                 self._log_mpv_state(event_name)
+            if event_name == "playback-restart":
+                self.track._stream_refresh_attempted = False
 
         self.register_event_callback(event_name, callback)
 
@@ -657,6 +659,25 @@ class Player:
                 f"reason={reason} track={self.track.name!r}"
             )
             return
+        if (
+            reason == mpv.MpvEventEndFile.ERROR
+            and self.track.service in ("yt", "ytm")
+            and not getattr(self.track, "_stream_refresh_attempted", False)
+        ):
+            self.track._stream_refresh_attempted = True
+            try:
+                logging.warning(
+                    "[PlaybackTiming] youtube_stream_refresh_started "
+                    f"track={self.track.name!r}"
+                )
+                refreshed_url = self.track.refresh_stream()
+                self._play(refreshed_url, save_to_recents=False)
+                return
+            except Exception as error:
+                logging.error(
+                    "[PlaybackTiming] youtube_stream_refresh_failed "
+                    f"track={self.track.name!r} error={error!r}"
+                )
         if self.state == State.Playing and self._player.idle_active:
             if self.mode == Mode.SingleTrack or self.track.type == TrackType.Direct:
                 # Mesmo em SingleTrack/Direct, a fila tem prioridade
