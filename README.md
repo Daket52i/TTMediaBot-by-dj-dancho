@@ -52,11 +52,13 @@ Earlier YouTube.js builds started a Node.js bridge and PO-token provider inside 
 
 1. A bot running with host networking sends search or resolve requests to the bridge through the host-only endpoint `http://127.0.0.1:4417`.
 2. The request includes a validated bot identifier, which selects only that bot's `bots/<name>/cookies.txt` file.
-3. The bridge maintains isolated authenticated sessions per cookie file while sharing bounded infrastructure caches and pending-request deduplication.
+3. The bridge maintains isolated authenticated sessions per cookie file while sharing bounded public-search caches and deduplicating pending search, recommendation, and resolution requests.
 4. The bridge resolves a playable audio stream and the Python bot passes it to `mpv`.
 5. If the shared service is restarting, clients retry with bounded exponential backoff.
 
-The bridge is published only on `127.0.0.1:4417`; the PO-token provider remains internal to the shared container. This preserves per-account cookie separation without exposing either service publicly. Up to 64 cookie-backed sessions are retained with least-recently-used eviction to prevent unbounded growth.
+The bridge is published only on `127.0.0.1:4417`; the PO-token provider remains internal to the shared container. This preserves per-account cookie separation without exposing either service publicly. Up to 64 cookie-backed sessions are retained in RAM with least-recently-used eviction to prevent unbounded growth. This is not a 64-bot limit: additional bots continue to work, and an evicted session is recreated from that bot's on-disk cookie file when needed.
+
+Public catalog searches are cached for 10 minutes (up to 512 normalized queries) and may be shared because they contain no account-private state. Authenticated recommendations remain separated by cookie identity and are cached for 10 minutes with a 256-entry bound. Stream resolutions are also isolated by cookie, client, and video; their lifetime is derived from the signed URL's `expire` value, reduced by a safety margin and capped at one hour. If `mpv` rejects a cached stream, TTMediaBot invalidates both Python and bridge caches, resolves a fresh URL, and retries once.
 
 The shared service can be started, stopped, or restarted independently through main-menu option **8**, without restarting every TeamTalk bot.
 
@@ -67,11 +69,8 @@ This fork includes optimized support for **YouTube Music** alongside regular You
 
 
 - **YouTube.js Bridge Integration:** High-performance persistent `YouTube.js` (`youtubei.js`) bridge for fast YouTube search and direct audio stream resolution
-- **Optimized Libraries:** 
-  - YouTube search and streaming are powered by the native `YouTube.js` bridge
-  - YouTube Music uses `ytmusicapi` - the official YouTube Music API library for catalog searches and authenticated autoplay
-  - Both services resolve mpv-compatible playback streams directly through the persistent bridge
-- **Performance Focus & Warmup:** Persistent sessions and background pre-warming reduce first-request latency, while bounded caches accelerate repeated stream resolution
+- **Unified YouTube.js Backend:** YouTube video search, YouTube Music song search, authenticated Up Next recommendations, and stream resolution all use the persistent shared bridge; the former per-bot `ytmusicapi` client and its HTTP connection pool have been removed
+- **Performance Focus & Warmup:** Persistent sessions and background pre-warming reduce first-request latency, while bounded LRU caches accelerate repeated catalog searches, recommendations, and stream resolution
 - **Unified Cookie System:** Both YouTube and YouTube Music use the same cookies configuration for authentication
 - **📦 Playlist & Album Downloads:** Full support for downloading entire collections via the `dlp` command with metadata-aware naming
 - **Complete Playlist Loading:** YouTube playlists and channel URLs use continuation pagination, with loading progress and the final track count reported to the requester
@@ -90,7 +89,7 @@ This fork includes an advanced **Autoplay / Related Videos** system for both You
 
 ### Features
 - **🆕 YouTube (`yt`) Implementation from Scratch:** Previously, the standard YouTube service did not support autoplay or recommendations. This feature has been fully implemented from scratch using a watch-page scraper that parses recommendations.
-- **🔒 YTM Authenticated & Safe Autoplay:** Modified the YouTube Music service to fetch recommendations using the authenticated client (cookies) rather than the public one, while fixing a critical deadlock bug in both services' queue validations.
+- **🔒 YTM Authenticated & Safe Autoplay:** The shared YouTube.js Music client fetches Up Next recommendations through the requesting bot's authenticated cookie session, while public catalog searches remain safely shareable.
 - **🔄 Zero-Interruption Playback:** When playing the last track in the queue, the bot automatically fetches and appends related tracks (5 tracks for Autoplay, or 20 tracks for dynamic queue lists) to keep the music going.
 - **🍪 Personalized Recommendations:** Both YouTube (`yt`) and YouTube Music (`ytm`) services fetch autoplay suggestions using the configured account cookies (`cookies.txt`). This ensures your autoplay experience is completely personalized and aligned with your account's listening history instead of pulling generic global lists.
 - **🛡️ Robust Autoplay Scraper:** Scrapes both the new YouTube layout structures (`lockupViewModel`) and classic layout structures (`compactVideoRenderer`) recursively from watch pages, parsing recommendations with complete thread safety and deadlock prevention.
