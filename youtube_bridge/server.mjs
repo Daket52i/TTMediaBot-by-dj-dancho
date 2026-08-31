@@ -1,19 +1,22 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { statSync } from 'node:fs';
+import path from 'node:path';
 import { URL } from 'node:url';
 import { ClientType, Innertube, UniversalCache, Platform } from 'youtubei.js';
 
 const HOST = process.env.YOUTUBE_BRIDGE_HOST || '127.0.0.1';
 const PORT = Number(process.env.YOUTUBE_BRIDGE_PORT || 4417);
 const POT_URL = process.env.POT_PROVIDER_URL || 'http://127.0.0.1:4416/get_pot';
+const BOTS_ROOT = path.resolve(process.env.TTMEDIABOT_BOTS_ROOT || '/bots');
 const USER_AGENT = process.env.YOUTUBE_BRIDGE_USER_AGENT ||
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1';
 
 // YouTube.js 18 requires an evaluator to decipher player signatures/nsig.
 Platform.shim.eval = async (data) => new Function(data.output)();
 
-let sessionCache = { key: null, context: null };
+const SESSION_CACHE_MAX_ENTRIES = 64;
+const sessionCache = new Map();
 let searchSessionPromise = null;
 const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESOLVE_CACHE_MAX_ENTRIES = 256;
@@ -34,6 +37,13 @@ async function readBody(req) {
   for await (const chunk of req) chunks.push(chunk);
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+function getBotCookieFile(botId) {
+  if (typeof botId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(botId)) {
+    throw new Error('Invalid or missing bot_id');
+  }
+  return path.join(BOTS_ROOT, botId, 'cookies.txt');
 }
 
 function cookieFileKey(cookieFile) {
@@ -105,24 +115,41 @@ async function getWebSessionData(cookie) {
 
 async function getSession(cookieFile) {
   const key = cookieFileKey(cookieFile);
-  if (sessionCache.key === key && sessionCache.context) return sessionCache.context;
+  const cached = sessionCache.get(key);
+  if (cached) {
+    sessionCache.delete(key);
+    sessionCache.set(key, cached);
+    return cached;
+  }
 
-  const cookie = await netscapeCookiesToHeader(cookieFile);
-  const webSession = await getWebSessionData(cookie);
-  const session = await Innertube.create({
-    cookie: cookie || undefined,
-    user_agent: USER_AGENT,
-    client_type: ClientType.MWEB,
-    visitor_data: webSession.visitorData,
-    cache: new UniversalCache(true),
-    enable_session_cache: true,
-    generate_session_locally: true,
-    retrieve_player: true
+  for (const cachedKey of sessionCache.keys()) {
+    if (cachedKey.startsWith(`${cookieFile}:`)) sessionCache.delete(cachedKey);
+  }
+
+  const contextPromise = (async () => {
+    const cookie = await netscapeCookiesToHeader(cookieFile);
+    const webSession = await getWebSessionData(cookie);
+    const session = await Innertube.create({
+      cookie: cookie || undefined,
+      user_agent: USER_AGENT,
+      client_type: ClientType.MWEB,
+      visitor_data: webSession.visitorData,
+      cache: new UniversalCache(true),
+      enable_session_cache: true,
+      generate_session_locally: true,
+      retrieve_player: true
+    });
+    return { session };
+  })().catch((error) => {
+    sessionCache.delete(key);
+    throw error;
   });
 
-  const context = { session };
-  sessionCache = { key, context };
-  return context;
+  sessionCache.set(key, contextPromise);
+  while (sessionCache.size > SESSION_CACHE_MAX_ENTRIES) {
+    sessionCache.delete(sessionCache.keys().next().value);
+  }
+  return contextPromise;
 }
 
 async function getSearchSession() {
@@ -515,6 +542,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
 
     const body = await readBody(req);
+    body.cookie_file = getBotCookieFile(body.bot_id);
     if (req.url === '/resolve') return json(res, 200, await resolveTrack(body));
     if (req.url === '/info') return json(res, 200, await getInfo(body));
     if (req.url === '/playlist') return json(res, 200, await getPlaylist(body));

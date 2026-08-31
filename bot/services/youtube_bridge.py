@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 class YouTubeBridge:
     def __init__(self, cookie_file: str = "", client: str = "WEB") -> None:
         self.base_url = os.getenv("YOUTUBE_BRIDGE_URL", "http://127.0.0.1:4417")
-        self.cookie_file = cookie_file
+        self.bot_id = os.getenv("TTBOT_INSTANCE", "")
         self.client = client
         self.timeout = (5, 30)
 
     def _post(self, endpoint: str, timeout: tuple[int, int] | None = None, **payload: Any) -> dict[str, Any]:
-        payload.setdefault("cookie_file", self.cookie_file or None)
+        payload.setdefault("bot_id", self.bot_id)
         payload.setdefault("client", self.client)
         try:
             response = requests.post(
