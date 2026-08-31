@@ -25,8 +25,10 @@ fi
 
 echo "TTMediaBot Auto-Updater started. Checking every 20 seconds..."
 
-LOCK_FILE="/tmp/ttmediabot_update.lock"
 YOUTUBE_BRIDGE_URL="http://127.0.0.1:4417"
+RECOVERY_BACKOFFS=(20 40 80 160 300)
+RECOVERY_FAILURES=0
+NEXT_RECOVERY_AT=0
 
 shared_youtube_service_supported() {
     $SUDO docker image inspect ttmediabot >/dev/null 2>&1 \
@@ -37,7 +39,6 @@ shared_youtube_service_supported() {
 # Cleanup function
 cleanup() {
     echo "$(date): Auto-Updater shutting down..."
-    $SUDO rm -f "$LOCK_FILE"
     # Kill background sleep if running so we exit immediately
     [ -n "$SLEEP_PID" ] && kill "$SLEEP_PID" 2>/dev/null
     exit 0
@@ -45,11 +46,6 @@ cleanup() {
 
 # Trap signals for clean shutdown (fixes systemd SIGTERM timeout)
 trap cleanup INT TERM
-
-# Initial cleanup of stale lock if script is starting fresh
-# (Wait 2 seconds to ensure no other instance is starting)
-sleep 2
-$SUDO rm -f "$LOCK_FILE"
 
 # Function to check if local is behind remote
 # Note: we only compare hashes. git ls-remote doesn't download objects,
@@ -60,6 +56,24 @@ is_behind_remote() {
     if [ "$local_h" == "$remote_h" ]; then return 1; fi
     # Hashes differ = remote has changed = we need to update
     return 0
+}
+
+reset_recovery_backoff() {
+    RECOVERY_FAILURES=0
+    NEXT_RECOVERY_AT=0
+}
+
+schedule_recovery_retry() {
+    local index=$RECOVERY_FAILURES
+    local last_index=$((${#RECOVERY_BACKOFFS[@]} - 1))
+    if [ "$index" -gt "$last_index" ]; then
+        index=$last_index
+    fi
+
+    local delay=${RECOVERY_BACKOFFS[$index]}
+    RECOVERY_FAILURES=$((RECOVERY_FAILURES + 1))
+    NEXT_RECOVERY_AT=$(($(date +%s) + delay))
+    echo "$(date): Shared YouTube recovery failed. Retrying in ${delay}s."
 }
 
 while true; do
@@ -84,6 +98,7 @@ while true; do
 
     # 1. Update Detection Logic
     SHOULD_UPDATE=false
+    RECOVERY_ATTEMPT=false
     
     if [ -n "$REMOTE_HASH" ]; then
         if is_behind_remote "$LOCAL_HASH" "$REMOTE_HASH"; then
@@ -95,34 +110,43 @@ while true; do
         fi
     fi
 
-    if [ "$SHOULD_UPDATE" = false ] \
-        && shared_youtube_service_supported \
-        && ! curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
-        echo "$(date): Shared YouTube service unavailable. Triggering recovery..."
-        SHOULD_UPDATE=true
+    if shared_youtube_service_supported; then
+        if curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+            reset_recovery_backoff
+        elif [ "$(date +%s)" -ge "$NEXT_RECOVERY_AT" ]; then
+            echo "$(date): Shared YouTube service unavailable. Triggering recovery..."
+            SHOULD_UPDATE=true
+            RECOVERY_ATTEMPT=true
+        fi
     fi
 
     if [ "$SHOULD_UPDATE" = true ]; then
-        if [ -f "$LOCK_FILE" ]; then
-            echo "$(date): Update already in progress. Skipping cycle..."
+        echo "$(date): Running update.sh..."
+        HASH_BEFORE=$(git rev-parse HEAD 2>/dev/null)
+        $SUDO env AUTO_UPDATE=true "$SCRIPT_DIR"/update.sh
+        UPDATE_EXIT=$?
+        HASH_AFTER=$(git rev-parse HEAD 2>/dev/null)
+
+        if [ "$UPDATE_EXIT" -eq 75 ]; then
+            echo "$(date): Another update owns the lock. Skipping cycle."
         else
-            $SUDO touch "$LOCK_FILE"
-            echo "$(date): Running update.sh..."
-            HASH_BEFORE=$(git rev-parse HEAD 2>/dev/null)
-            export AUTO_UPDATE=true
-            $SUDO "$SCRIPT_DIR"/update.sh
-            UPDATE_EXIT=$?
-            unset AUTO_UPDATE
-            $SUDO rm -f "$LOCK_FILE"
-            HASH_AFTER=$(git rev-parse HEAD 2>/dev/null)
             echo "$(date): update.sh finished with exit code $UPDATE_EXIT"
-            # CRITICAL: update.sh does 'git reset --hard' which replaces THIS script
-            # on disk. We must re-exec to pick up the new version, otherwise systemd
-            # detects 'command vanished from unit file' and kills us.
-            # Only exec if code actually changed to avoid infinite loop.
-            if [ "$HASH_BEFORE" != "$HASH_AFTER" ]; then
-                echo "$(date): Code updated ($HASH_BEFORE -> $HASH_AFTER). Re-launching..."
-                exec "$SCRIPT_DIR/auto_updater.sh"
+        fi
+
+        # CRITICAL: update.sh does 'git reset --hard' which replaces THIS script
+        # on disk. We must re-exec to pick up the new version, otherwise systemd
+        # detects 'command vanished from unit file' and kills us.
+        # Only exec if code actually changed to avoid infinite loop.
+        if [ "$HASH_BEFORE" != "$HASH_AFTER" ]; then
+            echo "$(date): Code updated ($HASH_BEFORE -> $HASH_AFTER). Re-launching..."
+            exec "$SCRIPT_DIR/auto_updater.sh"
+        fi
+
+        if [ "$RECOVERY_ATTEMPT" = true ] && [ "$UPDATE_EXIT" -ne 75 ]; then
+            if curl -fsS "$YOUTUBE_BRIDGE_URL/health" >/dev/null 2>&1; then
+                reset_recovery_backoff
+            else
+                schedule_recovery_retry
             fi
         fi
     fi
