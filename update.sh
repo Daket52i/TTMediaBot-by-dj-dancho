@@ -19,12 +19,44 @@ fi
 BOT_IMAGE="ttmediabot"
 YOUTUBE_SERVICE_NAME="ttmediabot-youtube"
 YOUTUBE_BRIDGE_URL="http://127.0.0.1:4417"
+UPDATE_LOCK_FILE="/tmp/ttmediabot_update.lock"
 
 # Auto-elevate to root via sudo if needed
 if [ "$EUID" -ne 0 ]; then
     echo "Not running as root. Re-launching with sudo..."
     exec sudo bash "$0" "$@"
 fi
+
+acquire_update_lock() {
+    if [ "${TTMEDIABOT_UPDATE_LOCK_HELD:-false}" = "true" ] \
+        && [ -e "/proc/$$/fd/9" ]; then
+        inherited_lock_file=$(readlink -f -- "$UPDATE_LOCK_FILE" 2>/dev/null || true)
+        inherited_lock_fd=$(readlink -f -- "/proc/$$/fd/9" 2>/dev/null || true)
+        if [ -n "$inherited_lock_file" ] \
+            && [ "$inherited_lock_fd" = "$inherited_lock_file" ] \
+            && flock -n 9; then
+            return 0
+        fi
+    fi
+
+    unset TTMEDIABOT_UPDATE_LOCK_HELD
+
+    exec 9>"$UPDATE_LOCK_FILE"
+    if [ "${AUTO_UPDATE:-false}" = "true" ]; then
+        if ! flock -n 9; then
+            echo "Another update is already in progress."
+            return 75
+        fi
+    else
+        echo "Waiting up to 300 seconds for the update lock..."
+        if ! flock -w 300 9; then
+            echo "Error: Timed out waiting for another update to finish." >&2
+            return 75
+        fi
+    fi
+
+    export TTMEDIABOT_UPDATE_LOCK_HELD=true
+}
 
 
 # Colors
@@ -240,25 +272,6 @@ perform_image_rebuild() {
 
 # Function: Update & Fix Permissions
 update_and_fix_permissions() {
-    # Lock protection to avoid race conditions (Commit A vs Commit B)
-    # If AUTO_UPDATE=true, the lock is handled by the parent service (auto_updater.sh)
-    # If called manually, we check and create it to avoid overlapping with the auto-updater.
-    LOCK_FILE="/tmp/ttmediabot_update.lock"
-    if [ "$AUTO_UPDATE" != "true" ]; then
-        if [ "${TTMEDIABOT_UPDATE_REEXECED:-false}" = "true" ]; then
-            trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
-        else
-        if [ -f "$LOCK_FILE" ]; then
-            echo -e "${RED}Error: Another update is already in progress.${NC}"
-            echo "Waiting for it to finish..."
-            while [ -f "$LOCK_FILE" ]; do sleep 2; done
-            echo "Lock released. Proceeding..."
-        fi
-        touch "$LOCK_FILE"
-        trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
-        fi
-    fi
-
     header
     echo -e "${YELLOW} --- Update & Auto-Fix --- ${NC}"
     
@@ -518,6 +531,9 @@ update_and_fix_permissions() {
                          echo -e "${YELLOW}Reloading the updated deployment logic...${NC}"
                          export TTMEDIABOT_UPDATE_REEXECED=true
                          exec bash "$SCRIPT_DIR/update.sh" "$@"
+                         reexec_status=$?
+                         echo -e "${RED}Failed to reload the updated deployment logic.${NC}" >&2
+                         return "$reexec_status"
                      fi
                 fi
             else
@@ -657,18 +673,18 @@ install_deps_light() {
 # Wrapping in a main function ensures bash loads the entire block into memory
 # protecting against crashes if the script modifies itself mid-execution during git reset.
 main() {
-    install_deps_light
-    update_and_fix_permissions "$@"
+    acquire_update_lock || return $?
+    install_deps_light || return $?
+    update_and_fix_permissions "$@" || return $?
 
     # A legacy updater can replace this script while continuing with its old
     # in-memory functions. Reconcile infrastructure even when no rebuild remains.
-    reconcile_shared_youtube_service || return 1
+    reconcile_shared_youtube_service || return $?
     
     # The user mandated that service configuration MUST run every time
     # but not block the flow (implemented via --no-block inside the function).
-    configure_auto_updater
+    configure_auto_updater || return $?
 }
 
 # Execute main in memory
 main "$@"
-exit 0
