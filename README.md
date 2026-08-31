@@ -62,6 +62,14 @@ Public catalog searches are cached for 10 minutes (up to 512 normalized queries)
 
 The shared service can be started, stopped, or restarted independently through main-menu option **8**, without restarting every TeamTalk bot.
 
+### Verified behavior and performance
+
+The unified backend is covered by Node.js tests for bounded TTL/LRU eviction, in-flight request deduplication, media mapping, and signed-URL expiry, plus Python contract tests for bridge calls, YouTube Music migration, stream refresh, and one-shot player recovery. A clean option **3** rebuild runs without `ytmusicapi` in the resulting image and recreates both the shared service and bot containers against the new architecture.
+
+During the post-migration validation, uncached video and Music searches completed in approximately 0.47–0.54 seconds, while equivalent cache hits completed in approximately 3–4 milliseconds. A forced fresh stream resolution completed in approximately 0.37 seconds and the following cache hit in approximately 3 milliseconds. These figures are reference measurements from the validation host, not fixed guarantees; network path, account state, YouTube responses, and host load still affect real latency.
+
+The same validation resolved a 36,107-second video without changing the existing long-media `mpv` settings. Cache rejection recovery remains deliberately limited to one retry: the rejected URL is invalidated in both cache layers, a new signed URL is requested, and normal failure handling resumes if that retry also fails.
+
 
 ## 🎵 YouTube Music Support
 
