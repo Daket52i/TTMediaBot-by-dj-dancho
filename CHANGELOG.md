@@ -4,6 +4,34 @@ All notable updates to this fork are documented here, in reverse chronological o
 
 ---
 
+## 🆕 v2.8.0 — "Unified Music Discovery & Expiry-Aware Playback" *(08/31/2026)*
+
+### 🎵 Unified YouTube.js Discovery
+- **🧹 Removed `ytmusicapi`:**
+  Migrated YouTube Music song search and authenticated Up Next radio to the shared YouTube.js bridge, removing the per-bot Python client, cookie-authentication duplication, HTTP/2 pool, and runtime dependency.
+- **🔎 Native Music Catalog Search:**
+  Added a bridge Music-search mode that preserves song, artist, duration, video ID, and playable URL metadata expected by the existing `ytm` service.
+- **📻 Authenticated Shared Recommendations:**
+  Added cookie-isolated Music Up Next retrieval with bounded caching and pending-request deduplication for both YTM autoplay and the YT recommendation fallback.
+
+### ⚡ Bounded Search and Stream Caching
+- **🔁 Shared Search Cache:**
+  Added normalized, public catalog caches for WEB and YTMUSIC searches with a 10-minute TTL, 512-entry LRU bound, and in-flight deduplication.
+- **⏳ Expiry-Aware Stream Reuse:**
+  Replaced the fixed five-minute stream cache with a lifetime derived from each signed URL's `expire` value, a two-minute safety margin, and a one-hour maximum.
+- **🐍 Local Stream Reuse:**
+  Added a per-bot Python cache that uses the bridge-provided safe deadline to avoid repeated local HTTP requests for the same valid stream.
+- **🧯 One-Shot Recovery:**
+  When `mpv` rejects a YouTube stream, the player now invalidates Python and bridge caches, resolves a fresh URL, and retries once without duplicating recent history.
+
+### 📊 Resolution Diagnostics and Tests
+- **🔬 Stage-Level Timings:**
+  Added safe timing logs for PO-token generation, Player API requests, format selection, signature deciphering, cache lifetime, and total client resolution without logging token or cookie values.
+- **✅ Regression Coverage:**
+  Added Node tests for TTL/LRU behavior, pending-request deduplication, media mapping, and URL-expiry calculations, plus Python tests for bridge contracts, YTM migration, stream refresh, and one-shot player recovery.
+
+---
+
 ## 🆕 v2.7.0 — "Shared YouTube Service, Playback Diagnostics & Queue Reliability" *(08/31/2026)*
 
 ### 🏗️ Shared Multi-Bot YouTube Architecture
