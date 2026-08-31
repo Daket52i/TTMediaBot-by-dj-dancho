@@ -1824,7 +1824,8 @@ while true; do
     echo "5. Check for Updates"
     echo "6. Enable/Disable Auto-Updates"
     echo "7. Clean Docker Cache (Unused)"
-    echo "8. Exit"
+    echo "8. Manage Shared YouTube Servers"
+    echo "9. Exit"
     echo ""
     read -p "Choose an option: " option
     
@@ -1873,6 +1874,15 @@ while true; do
             header
             ;;
         8)
+            if [ -f "$SCRIPT_DIR/youtube_server_manager.sh" ]; then
+                bash "$SCRIPT_DIR/youtube_server_manager.sh"
+            else
+                echo -e "${RED}youtube_server_manager.sh not found.${NC}"
+                read -p "Press Enter to continue..."
+            fi
+            header
+            ;;
+        9)
             echo "Exiting..."
             exit 0
             ;;
