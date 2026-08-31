@@ -17,8 +17,8 @@ This fork includes several modifications and optimizations:
 
 - **Removed Services:** Yandex Music and VK integration have been removed
 - **TeamTalk SDK Upgrade:** Updated to TeamTalk SDK 5.8.1 for improved performance
-- **YouTube.js Bridge Architecture:** Replaced `yt-dlp` and `py-yt-search` with a dedicated, persistent `YouTube.js` (`youtubei.js`) microservice bridge. Features session pre-warming on startup for instantaneous search and stream resolution with zero CLI bottlenecks.
-- **Multi-Instance Port Isolation:** Intelligent per-instance port allocation (`PORT_BASE`, `POT_PROVIDER_PORT`, `YOUTUBE_BRIDGE_PORT`) dynamically isolates backend bridges across multiple bot containers running concurrently.
+- **YouTube.js Bridge Architecture:** Replaced `yt-dlp` and `py-yt-search` with a persistent `YouTube.js` (`youtubei.js`) bridge, removing repeated command-line extraction from the playback path.
+- **Shared Multi-Bot Backend:** All bot containers now use one managed YouTube service containing the bridge and PO-token provider. Per-bot cookies remain isolated, while sessions, resolved streams, and in-flight requests are efficiently reused.
 - **ARM64 Architecture Support:** Added native support for ARM64 architecture (such as Raspberry Pi and AWS Graviton servers) with automatic platform detection and library downloads during installation.
   > [!NOTE]
   > On `x86_64` systems, the installation remains untouched and minimal. On `ARM` systems, the installer and Dockerfile conditionally install additional dependencies (such as `libportaudio2`) required by the ARM version of the TeamTalk SDK to run.
@@ -32,6 +32,28 @@ To view the complete history of updates, including all new features, bug fixes, 
 
 > 📋 **[See full changelog →](CHANGELOG.md)**
 
+## 🏗️ YouTube Backend Migration and Shared-Service Architecture
+
+### Why `yt-dlp` was removed
+
+The former backend started a separate `yt-dlp` process for media extraction. Although functional, that model became a performance bottleneck under regular use: every search or playback transition could incur process startup, page extraction, format parsing, and authentication overhead before `mpv` received a playable URL. The cost was especially noticeable with several bots, automatic next-track selection, playlists, and repeated authenticated requests.
+
+TTMediaBot therefore migrated YouTube search and stream resolution to a long-running `YouTube.js` service. Persistent sessions, background warm-up, direct API access, request deduplication, and bounded caches reduce repeated work and make playback latency more predictable. Detailed timing logs cover search, next-track selection, resolution, handoff to `mpv`, and actual playback start so regressions can be measured instead of inferred.
+
+### One backend for all bots
+
+Earlier YouTube.js builds started a Node.js bridge and PO-token provider inside every bot container. That design isolated instances, but multiplied memory use and startup load as the bot count increased. The current architecture runs both Node.js processes once in the dedicated `ttmediabot-youtube` container:
+
+1. A bot sends search or resolve requests to the shared bridge over the private Docker network.
+2. The request includes a validated bot identifier, which selects only that bot's `bots/<name>/cookies.txt` file.
+3. The bridge maintains isolated authenticated sessions per cookie file while sharing bounded infrastructure caches and pending-request deduplication.
+4. The bridge resolves a playable audio stream and the Python bot passes it to `mpv`.
+5. If the shared service is restarting, clients retry with bounded exponential backoff.
+
+The bridge is published only on `127.0.0.1:4417`; the PO-token provider remains internal to the shared container. This preserves per-account cookie separation without exposing either service publicly. Up to 64 cookie-backed sessions are retained with least-recently-used eviction to prevent unbounded growth.
+
+The shared service can be started, stopped, or restarted independently through main-menu option **8**, without restarting every TeamTalk bot.
+
 
 ## 🎵 YouTube Music Support
 
@@ -43,7 +65,7 @@ This fork includes optimized support for **YouTube Music** alongside regular You
   - YouTube search and streaming are powered by the native `YouTube.js` bridge
   - YouTube Music uses `ytmusicapi` - the official YouTube Music API library for catalog searches and authenticated autoplay
   - Both services resolve mpv-compatible playback streams directly through the persistent bridge
-- **Performance Focus & Warmup:** Built-in session pre-warming during bot startup ensures instantaneous response on initial search and track requests
+- **Performance Focus & Warmup:** Persistent sessions and background pre-warming reduce first-request latency, while bounded caches accelerate repeated stream resolution
 - **Unified Cookie System:** Both YouTube and YouTube Music use the same cookies configuration for authentication
 - **📦 Playlist & Album Downloads:** Full support for downloading entire collections via the `dlp` command with metadata-aware naming
 - **🕵️ Real-time PM Progress:** Stay updated on your downloads without cluttering the channel
@@ -88,7 +110,7 @@ This fork includes an advanced link-based downloading system that allows users t
 
 ## 🚀 Easy Installation (Recommended)
 
-This script will automatically install Git (if needed), clone the repository, and set up the Docker environment.
+`install_git_clone.sh` is the recommended entry point. It acquires root privileges when necessary, detects the available Linux package manager, installs Git and extraction tools, clones or updates the repository, detects `x86_64` or ARM, downloads the matching TeamTalk SDK library, and launches the Docker manager. The manager then installs Docker and `jq` when required, builds the image, and creates the shared YouTube service.
 
 1.  **Download and run the installer:**
     ```bash
@@ -101,6 +123,10 @@ This script will automatically install Git (if needed), clone the repository, an
     *   The script will automatically install all dependencies (including Docker if needed).
     *   Keep an eye on the terminal output to track the installation progress.
     *   You can manage multiple bots, update code, and change configurations through the Docker manager.
+
+### Alternative local installer
+
+`install.sh` installs the Python virtual environment, Node.js dependencies, FFmpeg, TeamTalk libraries, and project requirements directly on a supported Linux host. It is intended for manual/non-Docker deployments and development. For normal multi-bot operation, prefer `install_git_clone.sh` and `ttbotdocker.sh`, because the Docker workflow also manages service health, upgrades, container recreation, architecture-specific libraries, and cleanup.
 
 ---
 
@@ -203,7 +229,7 @@ Creates a new bot instance with full configuration wizard:
   - Prevents conflicts on the same TeamTalk server
 
 #### 2. Manage Bots
-Comprehensive bot management submenu with 12 options:
+Comprehensive bot management submenu with 13 options:
 
 **2.1. Start All Bots**
 - Starts all stopped bot containers
@@ -274,7 +300,12 @@ Comprehensive bot management submenu with 12 options:
 **2.11. Clear All Bot Logs**
 - Quick-clear utility that deletes all `*.log` files from all bot data folders to free up disk space.
 
-**2.12. Return to Main Menu**
+**2.12. Clear All Bot Caches**
+- Deletes `*.cache` and `*.dat` cache files only from bot directories under `bots/`.
+- Preserves bot configuration, cookies, downloads, logs, and files outside the managed bot directory.
+- Requires explicit confirmation before cleanup.
+
+**2.13. Return to Main Menu**
 
 #### 3. Rebuild Image / Update Code
 Updates the bot code and rebuilds the Docker image:
@@ -312,7 +343,14 @@ Advanced cleanup tool to reclaim disk space without affecting running bots:
 - **System Logs:** Vacuums `journalctl` logs older than 1 day.
 - **Zero-Footprint:** Ensures the host system stays lean.
 
-#### 8. Exit
+#### 8. Manage Shared YouTube Servers
+Launches `youtube_server_manager.sh` to control the shared YouTube backend independently:
+- **Start Servers:** Starts `ttmediabot-youtube` and waits for the bridge health check.
+- **Stop Servers:** Stops the shared bridge and PO-token provider container without stopping bot containers.
+- **Restart Servers:** Restarts the shared service and verifies that it becomes healthy again.
+- **Return:** Goes back to the main manager.
+
+#### 9. Exit
 Closes the script
 
 ### Automatic Features
@@ -321,6 +359,8 @@ The script automatically:
 - **Checks for Updates** automatically on startup if `update.sh` is present
 - **Installs dependencies** (Docker, jq) on first run
 - **Builds Docker image** automatically and forces PIP to update libraries (`-U`) on every rebuild
+- **Creates and health-checks the shared YouTube service** before starting or recreating bots
+- **Migrates legacy per-bot bridge containers** to the current shared-service layout during rebuilds and updates
 - **No startup prompts:** Rebuilding is now a manual menu option (Option 3), making startup faster
 - **Creates `bots` directory** structure
 - **Detects conflicts** (container names, nicknames on same server)
@@ -344,7 +384,7 @@ If you already have bots installed and just want to update the code without usin
    sudo ./update.sh
    ```
 
-This script will update the repository, rebuild the image, and recreate containers, ensuring everything is up to date.
+This script backs up bot data, synchronizes the repository, selects the correct TeamTalk SDK library for the host architecture, rebuilds the image, recreates the shared YouTube service, health-checks it, and then recreates the bot containers while preserving their previous running/stopped state. Its cleanup is scoped to TTMediaBot resources and conservative Docker pruning.
 
 ### 📢 Early Warning Update System
 
