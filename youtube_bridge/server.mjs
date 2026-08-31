@@ -308,28 +308,38 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
   const { session } = context;
 
   for (const client of clients) {
+    const clientStartedAt = performance.now();
     try {
+      const poStartedAt = performance.now();
       const poToken = client === ClientType.TV_EMBEDDED
         ? undefined
         : await getPoToken(videoId);
+      console.log(`[youtube-bridge-timing] video=${videoId} client=${client} stage=po-token elapsed_ms=${Math.round(performance.now() - poStartedAt)} available=${Boolean(poToken)}`);
+
+      const playerStartedAt = performance.now();
       const info = await getPlayableInfo(session, videoId, client, poToken);
+      console.log(`[youtube-bridge-timing] video=${videoId} client=${client} stage=player elapsed_ms=${Math.round(performance.now() - playerStartedAt)} status=${info?.playability_status?.status || 'UNKNOWN'}`);
       if (!info?.streaming_data) {
         throw new Error(`no streaming data (${playabilityDescription(info)})`);
       }
 
+      const formatStartedAt = performance.now();
       const format = info.chooseFormat(formatOptions);
+      console.log(`[youtube-bridge-timing] video=${videoId} client=${client} stage=choose-format elapsed_ms=${Math.round(performance.now() - formatStartedAt)} itag=${format.itag}`);
       if (!session.session.player) {
         throw new Error('YouTube player is unavailable');
       }
 
       session.session.player.po_token = poToken;
+      const decipherStartedAt = performance.now();
       format.url = await format.decipher(session.session.player);
+      console.log(`[youtube-bridge-timing] video=${videoId} client=${client} stage=decipher elapsed_ms=${Math.round(performance.now() - decipherStartedAt)}`);
 
       if (!format.url) {
         throw new Error('decipher returned an empty stream URL');
       }
 
-      console.log(`[youtube-bridge] resolved ${videoId} with client=${client} itag=${format.itag}`);
+      console.log(`[youtube-bridge] resolved ${videoId} with client=${client} itag=${format.itag} elapsed_ms=${Math.round(performance.now() - clientStartedAt)}`);
       return { info, format, client };
     } catch (error) {
       const message = error?.message || String(error);
