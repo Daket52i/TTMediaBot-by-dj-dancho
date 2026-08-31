@@ -1804,7 +1804,11 @@ if [ -f "$SCRIPT_DIR/update.sh" ]; then
 fi
 
 build_image
-ensure_shared_youtube_service || exit 1
+if docker run --rm --entrypoint test "$BOT_IMAGE" -f /home/ttbot/TTMediaBot/youtube_services.sh; then
+    ensure_shared_youtube_service || exit 1
+else
+    echo -e "${YELLOW}Shared YouTube service requires an image rebuild (option 3).${NC}"
+fi
 
 # Main Menu
 mkdir -p "$BOTS_ROOT"
