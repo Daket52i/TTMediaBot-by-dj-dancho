@@ -66,6 +66,34 @@ class Track:
         self.extra_info = track.extra_info
         self._is_fetched = True
 
+    def refresh_stream(self) -> str:
+        if self.service not in ("yt", "ytm"):
+            raise RuntimeError("Stream refresh is only supported for YouTube tracks")
+
+        with self._lock:
+            original = getattr(self, "_original_track", self)
+            original_info = copy.deepcopy(original.extra_info or {})
+            video_id = (
+                original_info.get("videoId")
+                or original_info.get("id")
+                or original_info.get("contentId")
+            )
+            source_url = original._url
+            service: Service = get_service_by_name(self.service)
+            service._bridge.invalidate(
+                video_id=video_id or "",
+                url="" if video_id else source_url,
+            )
+
+            self._url = source_url
+            self._name = original._name
+            self.extra_info = original_info
+            self.type = TrackType.Dynamic
+            self._is_fetched = False
+            self._fetch_failed = False
+            self._fetch_stream_data()
+            return self._url
+
     @property
     def url(self) -> str:
         needs_fetch = (
