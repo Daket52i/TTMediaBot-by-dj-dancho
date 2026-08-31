@@ -31,6 +31,8 @@ All notable updates to this fork are documented here, in reverse chronological o
   Added Node tests for TTL/LRU behavior, pending-request deduplication, media mapping, and URL-expiry calculations, plus Python tests for bridge contracts, YTM migration, stream refresh, and one-shot player recovery.
 
 ### 🧪 Clean-Rebuild Verification
+- **🩹 Legacy Update Recovery:**
+  Fixed upgrades from pre-shared-service releases that could rebuild and restart bot containers without starting `ttmediabot-youtube`. The updater now reloads deployment logic after replacing itself, reconciles a missing or unhealthy shared service even when no rebuild is pending, and lets the auto-updater trigger recovery when port 4417 is unavailable.
 - **📦 Runtime Dependency Removal:**
   Confirmed after an option **3** rebuild that `ytmusicapi` is absent from the generated image and that the shared YouTube service and bot container start healthy.
 - **✅ Automated Validation:**
