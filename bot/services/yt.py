@@ -360,19 +360,26 @@ class YtService(_Service):
               
               # Se o scraping web retornou poucos itens ou vazios, usa o rádio dinâmico do YouTube Music
               if len(recs) < 5:
-                  ytm_service = self.bot.service_manager.services.get("ytm")
-                  if ytm_service and hasattr(ytm_service, "ytmusic_public") and ytm_service.ytmusic_public:
-                      try:
-                          watch_playlist = ytm_service.ytmusic_public.get_watch_playlist(videoId=video_id, limit=50, radio=True)
-                          for item in watch_playlist.get("tracks", []):
-                              t_vid = item.get("videoId")
-                              if t_vid:
-                                  t_title = item.get("title", "")
-                                  artists = ", ".join([a.get("name", "") for a in item.get("artists", []) if isinstance(a, dict)])
-                                  full_title = f"{t_title} - {artists}" if artists else t_title
-                                  recs.append(Track(service=self.name, name=full_title, url=f"https://www.youtube.com/watch?v={t_vid}", type=TrackType.Dynamic, extra_info=item))
-                      except Exception as ex:
-                          logging.debug(f"[YT] YTM radio fallback error: {ex}")
+                  try:
+                      entries = self._bridge.recommendations(video_id, 50).get("entries", [])
+                      for item in entries:
+                          t_vid = item.get("videoId")
+                          if not t_vid:
+                              continue
+                          title = item.get("title", "")
+                          uploader = item.get("uploader", "")
+                          full_title = f"{title} - {uploader}" if uploader else title
+                          recs.append(
+                              Track(
+                                  service=self.name,
+                                  name=full_title,
+                                  url=item.get("webpage_url") or f"https://www.youtube.com/watch?v={t_vid}",
+                                  type=TrackType.Dynamic,
+                                  extra_info=item,
+                              )
+                          )
+                  except Exception as ex:
+                      logging.debug(f"[YT] YouTube Music radio fallback error: {ex}")
 
               if recs:
                    # Deduplica apenas contra as faixas à frente no buffer e as últimas 15 tocadas
