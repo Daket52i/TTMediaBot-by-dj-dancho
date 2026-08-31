@@ -46,10 +46,11 @@ create_shared_youtube_service() {
     docker rm -f "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1 || true
     docker create \
         --name "$YOUTUBE_SERVICE_NAME" \
-        --network host \
+        -p "127.0.0.1:4417:4417" \
         --label "role=ttmediabot-infrastructure" \
         --restart always \
         -e "TTMEDIABOT_BOTS_ROOT=/bots" \
+        -e "YOUTUBE_BRIDGE_HOST=0.0.0.0" \
         -v "${BOTS_ROOT}:/bots:ro" \
         --entrypoint /bin/bash \
         "$BOT_IMAGE" \
