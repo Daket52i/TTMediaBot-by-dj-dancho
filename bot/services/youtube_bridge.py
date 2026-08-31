@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import time
 from typing import Any
 
 import requests
@@ -22,25 +23,31 @@ class YouTubeBridge:
     def _post(self, endpoint: str, timeout: tuple[int, int] | None = None, **payload: Any) -> dict[str, Any]:
         payload.setdefault("bot_id", self.bot_id)
         payload.setdefault("client", self.client)
-        try:
-            response = requests.post(
-                f"{self.base_url}{endpoint}",
-                json=payload,
-                timeout=timeout or self.timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except requests.RequestException as exc:
-            detail = ""
-            if getattr(exc, "response", None) is not None:
-                try:
-                    detail = exc.response.json().get("error", "")
-                except ValueError:
-                    detail = exc.response.text[:500]
-            message = detail or str(exc)
-            raise errors.ServiceError(f"YouTube.js bridge error: {message}") from exc
-        except ValueError as exc:
-            raise errors.ServiceError("YouTube.js bridge returned invalid JSON") from exc
+        for attempt in range(5):
+            try:
+                response = requests.post(
+                    f"{self.base_url}{endpoint}",
+                    json=payload,
+                    timeout=timeout or self.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except requests.ConnectionError as exc:
+                if attempt == 4:
+                    raise errors.ServiceError(f"YouTube.js bridge unavailable: {exc}") from exc
+                time.sleep(0.25 * (2 ** attempt))
+            except requests.RequestException as exc:
+                detail = ""
+                if getattr(exc, "response", None) is not None:
+                    try:
+                        detail = exc.response.json().get("error", "")
+                    except ValueError:
+                        detail = exc.response.text[:500]
+                message = detail or str(exc)
+                raise errors.ServiceError(f"YouTube.js bridge error: {message}") from exc
+            except ValueError as exc:
+                raise errors.ServiceError("YouTube.js bridge returned invalid JSON") from exc
 
         if data.get("error"):
             raise errors.ServiceError(data["error"])
