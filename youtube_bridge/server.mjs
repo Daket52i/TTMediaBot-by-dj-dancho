@@ -5,7 +5,7 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import { ClientType, Innertube, UniversalCache, Platform } from 'youtubei.js';
 import { ExpiringLruCache } from './cache.mjs';
-import { normalizeSearchKey } from './media.mjs';
+import { musicItemPayload, normalizeSearchKey } from './media.mjs';
 
 const HOST = process.env.YOUTUBE_BRIDGE_HOST || '127.0.0.1';
 const PORT = Number(process.env.YOUTUBE_BRIDGE_PORT || 4417);
@@ -477,16 +477,24 @@ async function searchVideos(body) {
   const query = String(body.query || '').trim();
   if (!query) throw new Error('Search query is required');
   const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 50);
+  const mode = body.mode === 'music' ? 'music' : 'video';
   const startedAt = performance.now();
-  const cacheKey = normalizeSearchKey('video', query);
+  const cacheKey = normalizeSearchKey(mode, query);
   const cached = searchCache.get(cacheKey);
   if (cached) {
-    console.log(`[youtube-bridge] search cache hit mode=video query="${query}" elapsed_ms=${Math.round(performance.now() - startedAt)}`);
+    console.log(`[youtube-bridge] search cache hit mode=${mode} query="${query}" elapsed_ms=${Math.round(performance.now() - startedAt)}`);
     return { entries: cached.slice(0, limit) };
   }
 
   const entries = await searchCache.getOrCreate(cacheKey, SEARCH_CACHE_TTL_MS, async () => {
     const session = await getSearchSession();
+    if (mode === 'music') {
+      const search = await session.music.search(query, { type: 'song' });
+      return (search?.songs?.contents || [])
+        .map(musicItemPayload)
+        .filter(Boolean)
+        .slice(0, 50);
+    }
     const search = await session.search(query, { type: 'video' });
     return (search?.videos || []).slice(0, 50).map((video) => ({
       id: video.id,
@@ -496,7 +504,7 @@ async function searchVideos(body) {
       webpage_url: video.id ? `https://www.youtube.com/watch?v=${video.id}` : ''
     })).filter((video) => video.id);
   });
-  console.log(`[youtube-bridge] searched mode=video query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
+  console.log(`[youtube-bridge] searched mode=${mode} query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
   return { entries: entries.slice(0, limit) };
 }
 
