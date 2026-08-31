@@ -23,3 +23,34 @@ class YouTubeBridgeContractTests(TestCase):
         post.assert_called_once_with(
             "/recommendations", video_id="48Lrud3Bxpc", limit=15
         )
+
+    def test_resolve_reuses_response_until_bridge_deadline(self):
+        response = {
+            "url": "https://example.test/audio",
+            "cache_expires_at_ms": 50_000,
+        }
+        with patch("bot.services.youtube_bridge.time.time", return_value=10), patch.object(
+            self.bridge, "_post", return_value=response
+        ) as post:
+            first = self.bridge.resolve(video_id="48Lrud3Bxpc")
+            second = self.bridge.resolve(video_id="48Lrud3Bxpc")
+
+        self.assertIs(first, second)
+        post.assert_called_once()
+
+    def test_resolve_refreshes_after_bridge_deadline(self):
+        with patch.object(
+            self.bridge,
+            "_post",
+            side_effect=[
+                {"url": "first", "cache_expires_at_ms": 20_000},
+                {"url": "second", "cache_expires_at_ms": 40_000},
+            ],
+        ) as post:
+            with patch("bot.services.youtube_bridge.time.time", return_value=10):
+                self.bridge.resolve(video_id="48Lrud3Bxpc")
+            with patch("bot.services.youtube_bridge.time.time", return_value=30):
+                refreshed = self.bridge.resolve(video_id="48Lrud3Bxpc")
+
+        self.assertEqual(refreshed["url"], "second")
+        self.assertEqual(post.call_count, 2)
