@@ -44,7 +44,7 @@ uninstall_bot_only() {
     echo -e "${YELLOW}--- OPTION 1: Standard TTMediaBot Uninstall (Safe & Recommended) ---${NC}"
     echo ""
     echo "EXPLICIT DETAILS OF WHAT WILL BE REMOVED:"
-    echo "  1. All TTMediaBot Docker containers (labeled: role=ttmediabot)"
+    echo "  1. All TTMediaBot Docker containers and shared YouTube service"
     echo "  2. The TTMediaBot Docker image ('${BOT_IMAGE}')"
     echo "  3. All bot configuration, log, and cookies directories ('${BOTS_ROOT}')"
     echo "  4. The TTMediaBot auto-updater systemd service (ttmediabot-updater.service)"
@@ -66,6 +66,7 @@ uninstall_bot_only() {
     echo ""
     echo -e "${YELLOW}[1/5] Stopping and removing TTMediaBot containers...${NC}"
     if command -v docker &>/dev/null; then
+        docker rm -f ttmediabot-youtube 2>/dev/null
         docker stop -t 1 $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
         docker rm $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
     fi
@@ -138,6 +139,7 @@ uninstall_full_system() {
     echo ""
     echo -e "${YELLOW}[1/7] Stopping and removing ALL containers and Docker resources...${NC}"
     if command -v docker &>/dev/null; then
+        docker rm -f ttmediabot-youtube 2>/dev/null
         docker stop -t 1 $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
         docker rm $(docker ps -a -q -f "label=role=ttmediabot") 2>/dev/null
         docker system prune -a -f --volumes 2>/dev/null
