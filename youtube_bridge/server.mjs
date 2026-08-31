@@ -297,14 +297,16 @@ async function resolveFormat(context, videoId, requestedClient, formatOptions) {
   // WEB is SABR-only for many videos in 2026. MWEB still exposes classic
   // adaptive formats and is the preferred web playback client here.
   const clients = requestedClient === 'YTMUSIC'
-    ? ['YTMUSIC', 'MWEB']
-    : ['MWEB'];
+    ? ['YTMUSIC', 'MWEB', ClientType.TV_EMBEDDED]
+    : ['MWEB', ClientType.TV_EMBEDDED];
   const failures = [];
   const { session } = context;
 
   for (const client of clients) {
     try {
-      const poToken = await getPoToken(videoId);
+      const poToken = client === ClientType.TV_EMBEDDED
+        ? undefined
+        : await getPoToken(videoId);
       const info = await getPlayableInfo(session, videoId, client, poToken);
       if (!info?.streaming_data) {
         throw new Error(`no streaming data (${playabilityDescription(info)})`);
