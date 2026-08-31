@@ -650,8 +650,13 @@ class Player:
         chunks.append(stream_name) if stream_name else ...
         return " - ".join(chunks)
 
-    def on_end_file(self, event: mpv.MpvEvent) -> None:
-        event_data = event.as_dict().get("event") or {}
+    def on_end_file(self, event: Any) -> None:
+        if isinstance(event, dict):
+            event_data = event.get("event") or {}
+        elif hasattr(event, "as_dict"):
+            event_data = event.as_dict().get("event") or {}
+        else:
+            event_data = getattr(event, "event", {}) or {}
         reason = event_data.get("reason")
         if reason not in (mpv.MpvEventEndFile.EOF, mpv.MpvEventEndFile.ERROR):
             logging.info(
