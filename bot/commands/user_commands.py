@@ -60,14 +60,6 @@ class PlayPauseCommand(Command):
 
                 # Normal mode: request only 1 result and play immediately
                 track_list = self.search_tracks(arg)
-                if self.config.general.send_channel_messages:
-                    self.run_async(
-                        self.ttclient.send_message,
-                        self.translator.translate(
-                            "{nickname} requested {request}"
-                        ).format(nickname=user.nickname, request=arg),
-                        type=2,
-                    )
                 self.run_async(
                     self.player.play,
                     track_list,
@@ -77,6 +69,14 @@ class PlayPauseCommand(Command):
                         "query": self._last_search_query,
                     },
                 )
+                if self.config.general.send_channel_messages:
+                    self.run_async(
+                        self.ttclient.send_message,
+                        self.translator.translate(
+                            "{nickname} requested {request}"
+                        ).format(nickname=user.nickname, request=arg),
+                        type=2,
+                    )
                 return self.translator.translate("Playing {}").format(
                     track_list[0].name
                 )
