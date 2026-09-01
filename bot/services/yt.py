@@ -405,6 +405,8 @@ class YtService(_Service):
                    if new_tracks:
                         logging.info(f"[YT] Adding {len(new_tracks)} continuous recommendations to track list (total: {len(self.bot.player.track_list) + len(new_tracks)})")
                         self.bot.player.track_list.extend(new_tracks)
+                        if hasattr(self.bot.player, "_schedule_prefetch"):
+                             self.bot.player._schedule_prefetch()
                         return True
                    else:
                         logging.info(f"[YT] No new unique recommendations found for video_id {video_id}")
@@ -450,6 +452,11 @@ class YtService(_Service):
                 tracks.append(track)
             if not tracks:
                 raise errors.NothingFoundError("")
+            player = getattr(self.bot, "player", None)
+            if len(tracks) == 1 and not getattr(player, "is_playlist", False):
+                vid = entries[0].get("id") or entries[0].get("videoId")
+                if vid:
+                    self._fetch_autoplay_async(vid)
             duration = (time.perf_counter() - start_time) * 1000
             logging.info(f"YT Search (YouTube.js) finished in {duration:.2f}ms for query: {query}")
             return tracks
