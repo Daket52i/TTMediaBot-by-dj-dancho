@@ -600,13 +600,22 @@ async function searchVideos(body) {
           stream_url: cached.url
         };
       } else {
-        resolveTrack({
-          video_id: topVideoId,
-          client: requestedClient,
-          cookie_file: body.cookie_file
-        }).catch((err) => {
-          console.warn(`[youtube-bridge] background pre-resolve in search failed for ${topVideoId}: ${err.message}`);
-        });
+        try {
+          const resolved = await resolveTrack({
+            video_id: topVideoId,
+            client: requestedClient,
+            cookie_file: body.cookie_file
+          });
+          if (resolved && resolved.url) {
+            results[0] = {
+              ...results[0],
+              ...resolved,
+              stream_url: resolved.url
+            };
+          }
+        } catch (err) {
+          console.warn(`[youtube-bridge] pre-resolve in search failed for ${topVideoId}: ${err.message}`);
+        }
       }
     }
   }
