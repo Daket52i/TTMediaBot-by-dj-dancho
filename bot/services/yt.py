@@ -171,14 +171,10 @@ class YtService(_Service):
                 type=TrackType.Dynamic,
                 extra_info=info,
             )
-            if video_id:
-                try:
-                    recs = self._get_recommendations(video_id, limit=20)
-                    duration = (time.perf_counter() - start_time) * 1000
-                    logging.info(f"YT Get (Watch Playlist) finished in {duration:.2f}ms for video_id {video_id}")
-                    return [original_track] + recs
-                except Exception as e:
-                    logging.error(f"YT Watch Playlist failed: {e}")
+            if video_id and not getattr(self.bot.player, "is_playlist", False):
+                self._fetch_autoplay_async(video_id)
+            duration = (time.perf_counter() - start_time) * 1000
+            logging.info(f"YT Get (Fast Dynamic) finished in {duration:.2f}ms for {title}")
             return [original_track]
 
         if not video_id:
