@@ -39,6 +39,16 @@ class Command:
             f"pending_tasks={self._task_processor.task_queue.qsize()}"
         )
 
+    def send_message_async(self, *args: Any, **kwargs: Any) -> None:
+        import threading
+        threading.Thread(
+            target=self.ttclient.send_message,
+            args=args,
+            kwargs=kwargs,
+            daemon=True,
+            name="TT_MessageSender",
+        ).start()
+
     def search_tracks(self, query: str, limit: int | None = None) -> Any:
         service = self.service_manager.service
         started_at = time.perf_counter()
