@@ -35,11 +35,11 @@ class Player:
             "audio_format": "s16",
             "gapless_audio": "yes",
             "cache": "yes",
-            "cache_secs": 120,
-            "demuxer_max_bytes": 67108864,
-            "demuxer_max_back_bytes": 33554432,
-            "demuxer_readahead_secs": 60,
-            "stream_buffer_size": 1048576,
+            "cache_secs": 30,
+            "demuxer_max_bytes": 16777216,
+            "demuxer_max_back_bytes": 8388608,
+            "demuxer_readahead_secs": 20,
+            "stream_buffer_size": 131072,
             "network_timeout": 30,
             "video": False,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
@@ -52,6 +52,8 @@ class Player:
             del mpv_options["demuxer_max_back_bytes"]
             self._player = mpv.MPV(**mpv_options, log_handler=self.log_handler)
         self._log_level = 5
+        self._current_user_agent: Optional[str] = None
+        self._current_header_fields: Optional[List[str]] = None
         self.track_list: List[Track] = []
         self.track: Track = Track()
         self.track_index: int = -1
@@ -148,14 +150,24 @@ class Player:
             except Exception as e:
                 logging.debug(f"[Player] Failed to save recents: {e}")
             
-        # Apply headers dynamically if available in extra_info to prevent User-Agent/domain mismatches
+        # Apply headers dynamically if available in extra_info only when changed
         extra_info = getattr(self.track, "extra_info", None) or {}
         headers = extra_info.get("http_headers", {})
-        if headers:
+        target_ua = headers.get("User-Agent") if headers else None
+        target_headers = [f"{k}: {v}" for k, v in headers.items() if k.lower() != "user-agent"] if headers else []
+
+        if target_ua and self._current_user_agent != target_ua:
             try:
-                header_fields = [f"{k}: {v}" for k, v in headers.items() if k.lower() != "user-agent"]
-                self._player.user_agent = headers.get("User-Agent")
-                self._player.http_header_fields = header_fields
+                self._player.user_agent = target_ua
+                self._current_user_agent = target_ua
+                logging.debug(f"[Player] Dynamic User-Agent applied to MPV")
+            except Exception as e:
+                logging.debug(f"[Player] Failed to apply User-Agent to MPV: {e}")
+
+        if target_headers and self._current_header_fields != target_headers:
+            try:
+                self._player.http_header_fields = target_headers
+                self._current_header_fields = target_headers
                 logging.debug(f"[Player] Dynamic headers applied to MPV")
             except Exception as e:
                 logging.debug(f"[Player] Failed to apply dynamic headers to MPV: {e}")
