@@ -276,10 +276,28 @@ class YtmService(_Service):
              full_title = f"{t_title} - {t_artist}" if t_artist else t_title
              t_video_id = item.get("videoId")
              t_url = f"https://www.youtube.com/watch?v={t_video_id}"
+             stream_url = item.get("stream_url")
              
-             tracks.append(
-                  Track(service=self.name, url=t_url, name=full_title, type=TrackType.Dynamic, extra_info=item)
-             )
+             if stream_url:
+                 track = Track(
+                     service=self.name,
+                     url=stream_url,
+                     name=full_title,
+                     format="mp3",
+                     type=TrackType.Live if item.get("is_live") else TrackType.Default,
+                     extra_info=item,
+                     extracted_at=time.perf_counter(),
+                 )
+                 track._is_fetched = True
+             else:
+                 track = Track(
+                     service=self.name,
+                     url=t_url,
+                     name=full_title,
+                     type=TrackType.Dynamic,
+                     extra_info=item,
+                 )
+             tracks.append(track)
         return tracks
 
     def _get_recommendation_tracks(self, video_id: str, limit: int) -> List[Track]:
