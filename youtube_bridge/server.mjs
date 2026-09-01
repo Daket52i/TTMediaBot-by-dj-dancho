@@ -528,21 +528,23 @@ async function searchVideos(body) {
   if (limit === 1 && results.length > 0) {
     const topVideoId = results[0].videoId || results[0].id;
     if (topVideoId) {
-      try {
-        const resolved = await resolveTrack({
+      const requestedClient = mode === 'music' ? 'YTMUSIC' : 'MWEB';
+      const cacheKey = `${cookieFileKey(body.cookie_file)}:${requestedClient}:${topVideoId}`;
+      const cached = resolveCache.get(cacheKey);
+      if (cached && cached.url) {
+        results[0] = {
+          ...results[0],
+          ...cached,
+          stream_url: cached.url
+        };
+      } else {
+        resolveTrack({
           video_id: topVideoId,
-          client: mode === 'music' ? 'YTMUSIC' : 'MWEB',
+          client: requestedClient,
           cookie_file: body.cookie_file
+        }).catch((err) => {
+          console.warn(`[youtube-bridge] background pre-resolve in search failed for ${topVideoId}: ${err.message}`);
         });
-        if (resolved && resolved.url) {
-          results[0] = {
-            ...results[0],
-            ...resolved,
-            stream_url: resolved.url
-          };
-        }
-      } catch (err) {
-        console.warn(`[youtube-bridge] pre-resolve in search failed for ${topVideoId}: ${err.message}`);
       }
     }
   }
