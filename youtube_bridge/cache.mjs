@@ -40,6 +40,30 @@ export class ExpiringLruCache {
     this.pending.delete(key);
   }
 
+  dump() {
+    const data = [];
+    const now = this.now();
+    for (const [key, entry] of this.entries) {
+      if (entry && entry.expiresAt > now) {
+        data.push([key, entry.value, entry.expiresAt]);
+      }
+    }
+    return data;
+  }
+
+  load(data) {
+    if (!Array.isArray(data)) return;
+    const now = this.now();
+    for (const [key, value, expiresAt] of data) {
+      if (key && value && expiresAt > now) {
+        this.entries.set(key, { value, expiresAt });
+      }
+    }
+    while (this.entries.size > this.maxEntries) {
+      this.entries.delete(this.entries.keys().next().value);
+    }
+  }
+
   async getOrCreate(key, ttlMs, create) {
     const cached = this.get(key);
     if (cached !== undefined) return cached;
