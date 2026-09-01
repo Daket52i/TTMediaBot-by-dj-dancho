@@ -1774,7 +1774,8 @@ manage_bots() {
         echo "10. Backup / Restore Bots"
         echo "11. Clear All Bot Logs"
         echo "12. Clear All Bot Cache Files"
-        echo "13. Return to Main Menu"
+        echo "13. Clear YouTube Bridge Cache"
+        echo "14. Return to Main Menu"
         echo ""
         read -p "Choose an option: " opt_manage
         
@@ -1843,6 +1844,10 @@ manage_bots() {
                 header
                 ;;
             13)
+                clear_youtube_bridge_cache
+                header
+                ;;
+            14)
                 return
                 ;;
             *)
@@ -1880,8 +1885,7 @@ while true; do
     echo "6. Enable/Disable Auto-Updates"
     echo "7. Clean Docker Cache (Unused)"
     echo "8. Manage Shared YouTube Servers"
-    echo "9. Clear YouTube Bridge Cache"
-    echo "10. Exit"
+    echo "9. Exit"
     echo ""
     read -p "Choose an option: " option
     
@@ -1939,10 +1943,6 @@ while true; do
             header
             ;;
         9)
-            clear_youtube_bridge_cache
-            header
-            ;;
-        10)
             echo "Exiting..."
             exit 0
             ;;
