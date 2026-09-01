@@ -523,7 +523,31 @@ async function searchVideos(body) {
     })).filter((video) => video.id);
   });
   console.log(`[youtube-bridge] searched mode=${mode} query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
-  return { entries: entries.slice(0, limit) };
+
+  const results = entries.slice(0, limit);
+  if (limit === 1 && results.length > 0) {
+    const topVideoId = results[0].videoId || results[0].id;
+    if (topVideoId) {
+      try {
+        const resolved = await resolveTrack({
+          video_id: topVideoId,
+          client: mode === 'music' ? 'YTMUSIC' : 'MWEB',
+          cookie_file: body.cookie_file
+        });
+        if (resolved && resolved.url) {
+          results[0] = {
+            ...results[0],
+            ...resolved,
+            stream_url: resolved.url
+          };
+        }
+      } catch (err) {
+        console.warn(`[youtube-bridge] pre-resolve in search failed for ${topVideoId}: ${err.message}`);
+      }
+    }
+  }
+
+  return { entries: results };
 }
 
 async function getMusicRecommendations(body) {
