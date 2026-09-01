@@ -419,17 +419,35 @@ class YtService(_Service):
         start_time = time.perf_counter()
         try:
             entries = self._bridge.search(query, limit).get("entries", [])
-            tracks = [
-                Track(
-                    service=self.name,
-                    url=video["webpage_url"],
-                    name=video.get("title") or self.bot.translator.translate("Unknown Title"),
-                    type=TrackType.Dynamic,
-                    extra_info=video,
-                )
-                for video in entries
-                if video.get("webpage_url")
-            ]
+            tracks = []
+            for video in entries:
+                if not video.get("webpage_url") and not video.get("stream_url"):
+                    continue
+                title = video.get("title") or self.bot.translator.translate("Unknown Title")
+                uploader = video.get("uploader")
+                if uploader and uploader not in title:
+                    title += f" - {uploader}"
+                stream_url = video.get("stream_url")
+                if stream_url:
+                    track = Track(
+                        service=self.name,
+                        url=stream_url,
+                        name=title,
+                        format="mp3",
+                        type=TrackType.Live if video.get("is_live") else TrackType.Default,
+                        extra_info=video,
+                        extracted_at=time.perf_counter(),
+                    )
+                    track._is_fetched = True
+                else:
+                    track = Track(
+                        service=self.name,
+                        url=video.get("webpage_url", ""),
+                        name=title,
+                        type=TrackType.Dynamic,
+                        extra_info=video,
+                    )
+                tracks.append(track)
             if not tracks:
                 raise errors.NothingFoundError("")
             duration = (time.perf_counter() - start_time) * 1000
