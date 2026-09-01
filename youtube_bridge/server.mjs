@@ -506,18 +506,20 @@ async function searchVideos(body) {
     const session = await getSearchSession();
     if (mode === 'music') {
       const search = await session.music.search(query, { type: 'song' });
-      return (search?.songs?.contents || [])
+      const items = search?.songs?.contents || search?.contents || [];
+      return items
         .map(musicItemPayload)
         .filter(Boolean)
         .slice(0, 50);
     }
     const search = await session.search(query, { type: 'video' });
-    return (search?.videos || []).slice(0, 50).map((video) => ({
-      id: video.id,
-      videoId: video.id,
+    const items = search?.videos || search?.results || search?.contents || [];
+    return items.slice(0, 50).map((video) => ({
+      id: video.id || video.videoId,
+      videoId: video.id || video.videoId,
       title: textValue(video.title),
-      uploader: textValue(video.author?.name),
-      webpage_url: video.id ? `https://www.youtube.com/watch?v=${video.id}` : ''
+      uploader: textValue(video.author?.name || video.author?.text || video.author),
+      webpage_url: (video.id || video.videoId) ? `https://www.youtube.com/watch?v=${video.id || video.videoId}` : ''
     })).filter((video) => video.id);
   });
   console.log(`[youtube-bridge] searched mode=${mode} query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
@@ -668,4 +670,12 @@ server.listen(PORT, HOST, () => {
   getSearchSession().catch((err) => {
     console.warn('[youtube-bridge] Background search session warmup failed:', err?.message || err);
   });
+
+  // Keep search socket connections warm periodically
+  setInterval(async () => {
+    try {
+      const session = await getSearchSession();
+      await session.music.search('ping', { type: 'song' }).catch(() => {});
+    } catch {}
+  }, 45000).unref();
 });
