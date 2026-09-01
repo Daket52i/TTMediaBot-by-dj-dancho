@@ -191,22 +191,21 @@ class YtmService(_Service):
              elif "youtu.be" in url:
                   video_id = url.split("/")[-1]
         
-        if not video_id:
-             return [Track(service=self.name, url=url, type=TrackType.Dynamic)]
+        track_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else url
+        track_name = (extra_info.get("title") if extra_info else "") or ""
+        track = Track(
+            service=self.name,
+            url=track_url,
+            name=track_name,
+            type=TrackType.Dynamic,
+            extra_info=extra_info or ({"videoId": video_id} if video_id else None),
+        )
+        if video_id and not getattr(self.bot.player, "is_playlist", False):
+            self._fetch_autoplay_async(video_id)
 
-        # 2. Get Watch Playlist (Autoplay)
-        try:
-             new_tracks = self._get_recommendation_tracks(video_id, 20)
-             
-             duration = (time.perf_counter() - start_time) * 1000
-             logging.info(f"YTM Get (Watch Playlist) finished in {duration:.2f}ms for video_id {video_id}")
-             return new_tracks
-
-        except Exception as e:
-             logging.error(f"YTM Watch Playlist failed: {e}")
-             duration = (time.perf_counter() - start_time) * 1000
-             logging.info(f"YTM Get (Fallback) finished in {duration:.2f}ms for {url}")
-             return [Track(service=self.name, url=url, type=TrackType.Dynamic)]
+        duration = (time.perf_counter() - start_time) * 1000
+        logging.info(f"YTM Get (Fast Dynamic) finished in {duration:.2f}ms for {track_url}")
+        return [track]
 
     def _fetch_autoplay_async(self, video_id: str) -> None:
          threading.Thread(target=self._fetch_autoplay_sync, args=(video_id,), daemon=True, name=f"Autoplay_{video_id}").start()
