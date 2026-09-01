@@ -543,11 +543,25 @@ async function getMusicRecommendations(body) {
     RECOMMENDATION_CACHE_TTL_MS,
     async () => {
       const { session } = await getSession(body.cookie_file);
-      const playlist = await session.music.getUpNext(videoId, true);
-      return (playlist?.contents || [])
-        .map(musicItemPayload)
-        .filter((item) => item && item.videoId !== videoId)
-        .slice(0, 50);
+      try {
+        const playlist = await session.music.getUpNext(videoId, true);
+        return (playlist?.contents || [])
+          .map(musicItemPayload)
+          .filter((item) => item && item.videoId !== videoId)
+          .slice(0, 50);
+      } catch (err) {
+        console.warn(`[youtube-bridge] getUpNext(automix) failed for ${videoId}: ${err.message}. Retrying standard upNext...`);
+        try {
+          const fallbackPlaylist = await session.music.getUpNext(videoId, false);
+          return (fallbackPlaylist?.contents || [])
+            .map(musicItemPayload)
+            .filter((item) => item && item.videoId !== videoId)
+            .slice(0, 50);
+        } catch (fallbackErr) {
+          console.warn(`[youtube-bridge] getUpNext fallback failed for ${videoId}: ${fallbackErr.message}`);
+          return [];
+        }
+      }
     }
   );
   console.log(`[youtube-bridge] recommendations completed ${videoId} elapsed_ms=${Math.round(performance.now() - startedAt)} cache_entries=${recommendationCache.size}`);
