@@ -1731,6 +1731,31 @@ clear_bot_caches() {
     read -p "Press Enter to continue..."
 }
 
+# Function: Clear YouTube Bridge Cache
+clear_youtube_bridge_cache() {
+    header
+    echo -e "${YELLOW} --- Clear YouTube Bridge Cache --- ${NC}"
+    echo "This will clear in-memory and on-disk search & stream caches."
+    echo ""
+    read -p "Are you sure you want to clear YouTube Bridge cache? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+        return
+    fi
+
+    echo ""
+    echo "Clearing YouTube Bridge persistent cache..."
+    rm -f "${SCRIPT_DIR}/youtube_bridge/bridge_cache.json" 2>/dev/null || true
+    
+    if docker inspect "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1; then
+        docker exec "$YOUTUBE_SERVICE_NAME" rm -f /home/ttbot/TTMediaBot/youtube_bridge/bridge_cache.json 2>/dev/null || true
+        echo "Restarting YouTube Bridge service to flush RAM..."
+        docker restart "$YOUTUBE_SERVICE_NAME" >/dev/null 2>&1 || true
+    fi
+
+    echo -e "${GREEN}YouTube Bridge cache cleared successfully!${NC}"
+    read -p "Press Enter to continue..."
+}
+
 # Function: Manage Bots
 manage_bots() {
     # Show menu once
@@ -1855,7 +1880,8 @@ while true; do
     echo "6. Enable/Disable Auto-Updates"
     echo "7. Clean Docker Cache (Unused)"
     echo "8. Manage Shared YouTube Servers"
-    echo "9. Exit"
+    echo "9. Clear YouTube Bridge Cache"
+    echo "10. Exit"
     echo ""
     read -p "Choose an option: " option
     
@@ -1913,6 +1939,10 @@ while true; do
             header
             ;;
         9)
+            clear_youtube_bridge_cache
+            header
+            ;;
+        10)
             echo "Exiting..."
             exit 0
             ;;
