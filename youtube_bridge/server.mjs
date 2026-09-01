@@ -20,13 +20,46 @@ Platform.shim.eval = async (data) => new Function(data.output)();
 const SESSION_CACHE_MAX_ENTRIES = 64;
 const sessionCache = new Map();
 let searchSessionPromise = null;
-const RESOLVE_CACHE_MAX_ENTRIES = 256;
+const RESOLVE_CACHE_MAX_ENTRIES = 1024;
 const resolveCache = new ExpiringLruCache({ maxEntries: RESOLVE_CACHE_MAX_ENTRIES });
 const pendingResolutions = new Map();
-const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
-const searchCache = new ExpiringLruCache({ maxEntries: 512 });
-const RECOMMENDATION_CACHE_TTL_MS = 10 * 60 * 1000;
-const recommendationCache = new ExpiringLruCache({ maxEntries: 256 });
+const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const searchCache = new ExpiringLruCache({ maxEntries: 2048 });
+const RECOMMENDATION_CACHE_TTL_MS = 30 * 60 * 1000;
+const recommendationCache = new ExpiringLruCache({ maxEntries: 512 });
+
+const DISK_CACHE_FILE = path.resolve(process.env.BRIDGE_CACHE_FILE || path.join(path.dirname(new URL(import.meta.url).pathname), 'bridge_cache.json'));
+
+async function loadDiskCache() {
+  try {
+    const raw = await fs.readFile(DISK_CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed.search) searchCache.load(parsed.search);
+    if (parsed.resolve) resolveCache.load(parsed.resolve);
+    console.log(`[youtube-bridge] Loaded persistent disk cache (search: ${searchCache.size}, resolve: ${resolveCache.size})`);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('[youtube-bridge] Could not load disk cache:', err.message);
+    }
+  }
+}
+
+let saveTimer = null;
+function scheduleSaveDiskCache() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    try {
+      const data = {
+        search: searchCache.dump(),
+        resolve: resolveCache.dump()
+      };
+      await fs.writeFile(DISK_CACHE_FILE, JSON.stringify(data), 'utf8');
+    } catch (err) {
+      console.warn('[youtube-bridge] Could not save disk cache:', err.message);
+    }
+  }, 2000);
+}
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -377,6 +410,7 @@ async function resolveTrack(body) {
         cache_expires_at_ms: Date.now() + ttlMs
       };
       resolveCache.set(cacheKey, cachedPayload, ttlMs);
+      scheduleSaveDiskCache();
       console.log(`[youtube-bridge] resolve completed ${videoId} client=${requestedClient} elapsed_ms=${Math.round(performance.now() - startedAt)} ttl_ms=${Math.round(ttlMs)} cache_entries=${resolveCache.size}`);
       return cachedPayload;
     })
@@ -585,6 +619,7 @@ async function searchVideos(body) {
     })).filter((video) => video.id);
   });
   console.log(`[youtube-bridge] searched mode=${mode} query="${query}" in ${Math.round(performance.now() - startedAt)}ms cache_entries=${searchCache.size}`);
+  scheduleSaveDiskCache();
 
   const results = entries.slice(0, limit);
   if (limit === 1 && results.length > 0) {
@@ -737,6 +772,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[youtube-bridge] listening on http://${HOST}:${PORT}`);
+  loadDiskCache().catch(() => {});
   // Background pre-warming for search session so first user request is instant
   getSearchSession().catch((err) => {
     console.warn('[youtube-bridge] Background search session warmup failed:', err?.message || err);
