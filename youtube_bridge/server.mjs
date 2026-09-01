@@ -164,7 +164,8 @@ async function getSearchSession() {
       cache: new UniversalCache(true),
       enable_session_cache: true,
       generate_session_locally: true,
-      retrieve_player: false
+      retrieve_player: false,
+      fail_fast: true
     }).catch((error) => {
       searchSessionPromise = null;
       throw error;
@@ -504,6 +505,67 @@ async function searchVideos(body) {
 
   const entries = await searchCache.getOrCreate(cacheKey, SEARCH_CACHE_TTL_MS, async () => {
     const session = await getSearchSession();
+    try {
+      if (mode === 'music') {
+        const rawRes = await session.actions.execute('/search', {
+          query,
+          params: 'Eg-KAQwIARAAGAAgACgAMABqChAEEAMQCRAFEAo%3D',
+          client: 'YTMUSIC'
+        });
+        const tab = rawRes.data?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer;
+        const sections = tab?.content?.sectionListRenderer?.contents || [];
+        const ytmEntries = [];
+        for (const sec of sections) {
+          const items = sec?.musicShelfRenderer?.contents || sec?.musicCardShelfRenderer?.contents || [];
+          for (const item of items) {
+            const r = item?.musicResponsiveListItemRenderer;
+            if (!r) continue;
+            const flexCols = r.flexColumns || [];
+            const title = flexCols[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text;
+            const artist = flexCols[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text;
+            const videoId = r.playlistItemData?.videoId || r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+            if (videoId) {
+              ytmEntries.push({
+                id: videoId,
+                videoId,
+                title: title || 'Unknown Title',
+                uploader: artist || '',
+                webpage_url: `https://www.youtube.com/watch?v=${videoId}`
+              });
+            }
+          }
+        }
+        if (ytmEntries.length > 0) return ytmEntries.slice(0, 50);
+      } else {
+        const rawRes = await session.actions.execute('/search', {
+          query,
+          params: 'EgIQAQ%3D%3D',
+          client: 'WEB'
+        });
+        const ytContents = rawRes.data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+        const ytEntries = [];
+        for (const sec of ytContents) {
+          const items = sec?.itemSectionRenderer?.contents || [];
+          for (const item of items) {
+            const v = item?.videoRenderer;
+            if (!v || !v.videoId) continue;
+            const title = v.title?.runs?.[0]?.text || v.title?.simpleText;
+            const uploader = v.ownerText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text;
+            ytEntries.push({
+              id: v.videoId,
+              videoId: v.videoId,
+              title: title || 'Unknown Title',
+              uploader: uploader || '',
+              webpage_url: `https://www.youtube.com/watch?v=${v.videoId}`
+            });
+          }
+        }
+        if (ytEntries.length > 0) return ytEntries.slice(0, 50);
+      }
+    } catch (rawErr) {
+      console.warn(`[youtube-bridge] Fast raw search failed for "${query}", falling back to parser:`, rawErr.message);
+    }
+
     if (mode === 'music') {
       const search = await session.music.search(query, { type: 'song' });
       const items = search?.songs?.contents || search?.contents || [];
