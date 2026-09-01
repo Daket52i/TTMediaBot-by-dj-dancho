@@ -59,8 +59,7 @@ class PlayPauseCommand(Command):
 
                 # Normal mode: request only 1 result and play immediately
                 track_list = self.search_tracks(arg)
-                self.run_async(
-                    self.player.play,
+                self.player.play(
                     track_list,
                     timing_context={
                         "kind": "search",
@@ -86,9 +85,9 @@ class PlayPauseCommand(Command):
                 )
         else:
             if self.player.state == State.Playing:
-                self.run_async(self.player.pause)
+                self.player.pause()
             elif self.player.state == State.Paused:
-                self.run_async(self.player.play)
+                self.player.play()
 
 
 class PlayUrlCommand(Command):
@@ -106,7 +105,7 @@ class PlayUrlCommand(Command):
                 tracks = self.module_manager.streamer.get(arg, user.is_admin)
                 if not tracks:
                     return self.translator.translate("Nothing is found for your query")
-                self.run_async(self.player.play, tracks)
+                self.player.play(tracks)
                 if self.config.general.send_channel_messages:
                     self.send_message_async(
                         self.translator.translate(
