@@ -352,30 +352,35 @@ class YtService(_Service):
     def _fetch_autoplay_sync(self, video_id: str) -> bool:
          try:
               logging.info(f"[YT] Fetching continuous recommendations for {video_id}")
-              recs = self._get_recommendations(video_id, limit=20)
-              
-              # Se o scraping web retornou poucos itens ou vazios, usa o rádio dinâmico do YouTube Music
+              recs: List[Track] = []
+              try:
+                  entries = self._bridge.recommendations(video_id, 50).get("entries", [])
+                  for item in entries:
+                      t_vid = item.get("videoId")
+                      if not t_vid:
+                          continue
+                      title = item.get("title", "")
+                      uploader = item.get("uploader", "")
+                      full_title = f"{title} - {uploader}" if uploader else title
+                      recs.append(
+                          Track(
+                              service=self.name,
+                              name=full_title,
+                              url=item.get("webpage_url") or f"https://www.youtube.com/watch?v={t_vid}",
+                              type=TrackType.Dynamic,
+                              extra_info=item,
+                          )
+                      )
+              except Exception as ex:
+                  logging.debug(f"[YT] Bridge recommendations query failed: {ex}")
+
               if len(recs) < 5:
                   try:
-                      entries = self._bridge.recommendations(video_id, 50).get("entries", [])
-                      for item in entries:
-                          t_vid = item.get("videoId")
-                          if not t_vid:
-                              continue
-                          title = item.get("title", "")
-                          uploader = item.get("uploader", "")
-                          full_title = f"{title} - {uploader}" if uploader else title
-                          recs.append(
-                              Track(
-                                  service=self.name,
-                                  name=full_title,
-                                  url=item.get("webpage_url") or f"https://www.youtube.com/watch?v={t_vid}",
-                                  type=TrackType.Dynamic,
-                                  extra_info=item,
-                              )
-                          )
+                      fallback_recs = self._get_recommendations(video_id, limit=20)
+                      if fallback_recs:
+                          recs.extend(fallback_recs)
                   except Exception as ex:
-                      logging.debug(f"[YT] YouTube Music radio fallback error: {ex}")
+                      logging.debug(f"[YT] Web scraping fallback error: {ex}")
 
               if recs:
                    # Deduplica apenas contra as faixas à frente no buffer e as últimas 15 tocadas
