@@ -286,10 +286,8 @@ function formatPayload(format) {
 }
 
 async function getPlayableInfo(session, videoId, client, poToken) {
-  if (client === 'YTMUSIC') {
-    return session.music.getInfo(videoId, { po_token: poToken });
-  }
-  return session.getBasicInfo(videoId, { client, po_token: poToken });
+  const targetClient = client === 'YTMUSIC' ? ClientType.MWEB : client;
+  return session.getBasicInfo(videoId, { client: targetClient, po_token: poToken });
 }
 
 function playabilityDescription(info) {
