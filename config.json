@@ -1,20 +1,22 @@
 {
     "config_version": 0,
     "general": {
-        "language": "en",
+        "language": "ru",
         "send_channel_messages": true,
         "cache_file_name": "TTMediaBotCache.dat",
         "blocked_commands": [],
         "delete_uploaded_files_after": 300,
         "time_format": "%H:%M",
-        "start_commands": []
+        "start_commands": [
+            "r 1"
+        ]
     },
     "sound_devices": {
-        "output_device": 0,
+        "output_device": 1,
         "input_device": 0
     },
     "player": {
-        "default_volume": 50,
+        "default_volume": 30,
         "max_volume": 100,
         "volume_fading": true,
         "volume_fading_interval": 0.025,
@@ -22,17 +24,17 @@
         "player_options": {}
     },
     "teamtalk": {
-        "hostname": "localhost",
-        "tcp_port": 10333,
-        "udp_port": 10333,
+        "hostname": "ostrovok.moreoptimizma.ru",
+        "tcp_port": 10340,
+        "udp_port": 10348,
         "encrypted": false,
-        "nickname": "TTMediaBot",
+        "nickname": "киси-миси посторонним не трогать",
         "status": "",
         "gender": "n",
-        "username": "",
-        "password": "",
-        "channel": "/",
-        "channel_password": "",
+        "username": "bot",
+        "password": "125",
+        "channel": "/Свободный бамбёж",
+        "channel_password": "96",
         "license_name": "",
         "license_key": "",
         "reconnection_attempts": -1,
@@ -50,12 +52,23 @@
     },
     "services": {
         "default_service": "yt",
+        "vk": {
+            "enabled": true,
+            "token": ""
+        },
+        "yam": {
+            "enabled": true,
+            "token": ""
+        },
         "yt": {
             "enabled": true,
-            "cookiefile_path": "data/cookies.txt",
+            "cookiefile_path": ""
+        },
+        "rt": {
+            "enabled": true,
             "search_results": 1
         },
-        "ytm": {
+        "mf": {
             "enabled": true,
             "search_results": 1
         }
