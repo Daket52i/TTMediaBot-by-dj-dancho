@@ -58,6 +58,14 @@
         "ytm": {
             "enabled": true,
             "search_results": 1
+        },
+        "rt": {
+            "enabled": true,
+            "search_results": 1
+        },
+        "mf": {
+            "enabled": true,
+            "search_results": 1
         }
     },
     "logger": {
